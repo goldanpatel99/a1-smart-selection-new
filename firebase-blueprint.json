@@ -1,0 +1,91 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Photographer or Administrator user profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["photographer", "admin"] },
+        "studioName": { "type": "string" },
+        "phone": { "type": "string" },
+        "points": { "type": "number" },
+        "watermarkText": { "type": "string" },
+        "watermarkPosition": { "type": "string" },
+        "watermarkOpacity": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "email", "role", "studioName", "points"]
+    },
+    "WeddingEvent": {
+      "title": "WeddingEvent",
+      "description": "Wedding event photography gallery and client selections",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "photographerId": { "type": "string" },
+        "title": { "type": "string" },
+        "coupleName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "eventDate": { "type": "string" },
+        "deadlineDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "active", "completed", "expired"] },
+        "slug": { "type": "string" },
+        "studioName": { "type": "string" },
+        "photosCount": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "photographerId", "title", "coupleName", "clientPhone", "deadlineDate", "status"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Point recharge or payment log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "pointsAdded": { "type": "number" },
+        "amountRupees": { "type": "number" },
+        "type": { "type": "string" },
+        "status": { "type": "string" },
+        "utrNumber": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "pointsAdded", "status", "createdAt"]
+    },
+    "AdminSettings": {
+      "title": "AdminSettings",
+      "description": "Global application configuration and pricing",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "upiId": { "type": "string" },
+        "payeeName": { "type": "string" },
+        "adminWhatsApp": { "type": "string" },
+        "pointsPerEvent": { "type": "number" },
+        "pointsPerExtension": { "type": "number" }
+      },
+      "required": ["id", "upiId", "payeeName", "adminWhatsApp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Registered photographer and admin profiles"
+    },
+    "/events/{eventId}": {
+      "schema": "WeddingEvent",
+      "description": "Wedding events and client photo galleries"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Points recharges and UPI payment audit entries"
+    },
+    "/settings/{settingsId}": {
+      "schema": "AdminSettings",
+      "description": "Global system pricing and UPI settings"
+    }
+  }
+}

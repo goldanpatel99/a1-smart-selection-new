@@ -1,0 +1,480 @@
+import React, { useState } from 'react';
+import { useApp } from '../context/AppContext';
+import {
+  ArrowLeft,
+  Download,
+  Terminal,
+  FolderArchive,
+  Copy,
+  Check,
+  FileSpreadsheet,
+  Heart,
+  Sliders,
+  Sparkles,
+  Info,
+  ExternalLink,
+  Laptop,
+  CheckCircle2,
+} from 'lucide-react';
+import {
+  generateBatScript,
+  generateShScript,
+  generateLightroomFilenames,
+  generateCsvReport,
+  downloadFile,
+} from '../utils/batGenerator';
+
+export const SelectionResultsPage: React.FC = () => {
+  const { activeEvent, navigateTo, showToast } = useApp();
+
+  const [copiedLightroom, setCopiedLightroom] = useState(false);
+  const [includeExtension, setIncludeExtension] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedFolderFilter, setSelectedFolderFilter] = useState('all');
+
+  if (!activeEvent) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-16 text-center">
+        <h2 className="text-xl font-bold text-white mb-2">No Event Selected</h2>
+        <button
+          onClick={() => navigateTo('dashboard')}
+          className="px-4 py-2 bg-neutral-800 text-white rounded-xl text-xs"
+        >
+          Return to Dashboard
+        </button>
+      </div>
+    );
+  }
+
+  const selectedPhotos = activeEvent.photos.filter((p) => p.isSelected);
+  const totalPhotos = activeEvent.photos.length;
+  const pctSelected = totalPhotos > 0 ? Math.round((selectedPhotos.length / totalPhotos) * 100) : 0;
+
+  // Folder breakdown
+  const folderStats = activeEvent.folders.map((folder) => {
+    const total = activeEvent.photos.filter((p) => p.folderId === folder.id).length;
+    const selected = activeEvent.photos.filter(
+      (p) => p.folderId === folder.id && p.isSelected
+    ).length;
+    return {
+      id: folder.id,
+      name: folder.name,
+      total,
+      selected,
+      pct: total > 0 ? Math.round((selected / total) * 100) : 0,
+    };
+  });
+
+  const handleDownloadBat = () => {
+    const batContent = generateBatScript(activeEvent);
+    const filename = `A1_Copy_${activeEvent.slug || activeEvent.id}.bat`;
+    downloadFile(batContent, filename, 'text/plain');
+    showToast(`Windows .BAT script downloaded: ${filename}`, 'success');
+  };
+
+  const handleDownloadSh = () => {
+    const shContent = generateShScript(activeEvent);
+    const filename = `A1_Copy_${activeEvent.slug || activeEvent.id}.sh`;
+    downloadFile(shContent, filename, 'text/x-sh');
+    showToast(`Mac/Linux .SH script downloaded: ${filename}`, 'success');
+  };
+
+  const handleDownloadCsv = () => {
+    const csvContent = generateCsvReport(activeEvent);
+    const filename = `A1_Selection_${activeEvent.slug || activeEvent.id}.csv`;
+    downloadFile(csvContent, filename, 'text/csv');
+    showToast('CSV report downloaded!', 'success');
+  };
+
+  const handleCopyLightroom = () => {
+    const filenames = generateLightroomFilenames(activeEvent, includeExtension);
+    navigator.clipboard.writeText(filenames);
+    setCopiedLightroom(true);
+    showToast('Filenames copied for Lightroom search bar!', 'success');
+    setTimeout(() => setCopiedLightroom(false), 2500);
+  };
+
+  // Filtered view of selected photos
+  const displayedPhotos = selectedPhotos.filter((p) => {
+    if (selectedFolderFilter !== 'all' && p.folderId !== selectedFolderFilter) {
+      return false;
+    }
+    if (searchTerm && !p.filename.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+    return true;
+  });
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Top Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-neutral-800">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigateTo('dashboard')}
+            className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase font-bold text-amber-400">
+                Selection Results & Exports
+              </span>
+              <span className="text-neutral-500">•</span>
+              <span
+                className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                  activeEvent.status === 'completed'
+                    ? 'bg-emerald-500/20 text-emerald-300'
+                    : 'bg-amber-500/20 text-amber-300'
+                }`}
+              >
+                {activeEvent.status === 'completed' ? '✓ Client Submitted' : 'In Progress'}
+              </span>
+            </div>
+            <h1 className="text-2xl font-bold font-heading text-white">{activeEvent.title}</h1>
+            <p className="text-xs text-neutral-400">
+              Client: {activeEvent.coupleName} ({activeEvent.clientPhone})
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigateTo('client-gallery', activeEvent.id)}
+            className="px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-xl text-xs font-semibold flex items-center gap-1.5"
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+            <span>Open Client Link</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Primary Metrics Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 my-6">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4">
+          <span className="text-neutral-400 text-xs">Total Selected</span>
+          <div className="text-3xl font-extrabold text-rose-400 font-mono mt-1 flex items-baseline gap-1">
+            <span>{selectedPhotos.length}</span>
+            <span className="text-xs text-neutral-400 font-sans">/ {totalPhotos}</span>
+          </div>
+          <p className="text-[11px] text-neutral-500 mt-1">{pctSelected}% of album photos</p>
+        </div>
+
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4">
+          <span className="text-neutral-400 text-xs">Selection Status</span>
+          <div className="text-lg font-bold text-white mt-1">
+            {activeEvent.status === 'completed' ? 'Finalized' : 'Active Selection'}
+          </div>
+          <p className="text-[11px] text-emerald-400 mt-1">
+            {activeEvent.submittedAt
+              ? `Submitted on ${new Date(activeEvent.submittedAt).toLocaleDateString()}`
+              : 'Auto-saved in real-time'}
+          </p>
+        </div>
+
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4">
+          <span className="text-neutral-400 text-xs">Folders</span>
+          <div className="text-3xl font-extrabold text-white font-mono mt-1">
+            {activeEvent.folders.length}
+          </div>
+          <p className="text-[11px] text-neutral-500 mt-1">Ceremony, Reception, etc.</p>
+        </div>
+
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4">
+          <span className="text-neutral-400 text-xs">Quota Limit</span>
+          <div className="text-2xl font-bold text-amber-400 font-mono mt-1">
+            {activeEvent.maxSelectionLimit || 'Unlimited'}
+          </div>
+          <p className="text-[11px] text-neutral-500 mt-1">Max allowed by photographer</p>
+        </div>
+      </div>
+
+      {activeEvent.clientNotes && (
+        <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200">
+          <div className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-1 flex items-center gap-1.5">
+            <Info className="w-4 h-4" />
+            Client's Special Notes / Album Request:
+          </div>
+          <p className="text-xs leading-relaxed italic font-medium">
+            "{activeEvent.clientNotes}"
+          </p>
+        </div>
+      )}
+
+      {/* PRO AUTOMATION SECTION: .BAT & SCRIPTS */}
+      <div className="bg-gradient-to-r from-neutral-900 via-neutral-900 to-amber-950/40 border border-amber-500/40 rounded-3xl p-6 sm:p-8 shadow-xl mb-8">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 pb-6 border-b border-neutral-800">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold mb-2">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>1-Click Auto Copy System</span>
+            </div>
+            <h2 className="text-2xl font-extrabold font-heading text-white">
+              Download Automated Copy Script (.BAT / .SH)
+            </h2>
+            <p className="text-xs text-neutral-300 mt-1 max-w-xl">
+              Script ko apne computer par original high-res folder mein rakhein aur double-click karein.
+              Yeh automatically sabhi {selectedPhotos.length} selected photos ko "Selected_Photos"
+              folder mein copy kar degi!
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Windows .BAT Button */}
+            <button
+              onClick={handleDownloadBat}
+              disabled={selectedPhotos.length === 0}
+              className="px-6 py-3.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 hover:from-amber-400 hover:to-amber-200 text-neutral-950 font-extrabold text-sm rounded-2xl shadow-xl shadow-amber-500/25 transition-all hover:scale-105 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Terminal className="w-5 h-5 text-neutral-950" />
+              <span>Download Windows .BAT File</span>
+            </button>
+
+            {/* Mac / Linux .SH Button */}
+            <button
+              onClick={handleDownloadSh}
+              disabled={selectedPhotos.length === 0}
+              className="px-4 py-3.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs rounded-2xl border border-neutral-700 transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              <Laptop className="w-4 h-4 text-amber-400" />
+              <span>Mac / Linux (.SH)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 3 Step Visual Guide */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 text-xs">
+          <div className="flex items-start gap-3 p-3.5 bg-neutral-950/60 rounded-2xl border border-neutral-800/80">
+            <div className="w-7 h-7 rounded-xl bg-amber-500/10 text-amber-400 font-bold flex items-center justify-center flex-shrink-0">
+              1
+            </div>
+            <div>
+              <div className="font-bold text-white">.bat File Download Karein</div>
+              <p className="text-neutral-400 text-[11px] mt-0.5">
+                Upar diye gaye button par click karke batch script download karein.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 p-3.5 bg-neutral-950/60 rounded-2xl border border-neutral-800/80">
+            <div className="w-7 h-7 rounded-xl bg-amber-500/10 text-amber-400 font-bold flex items-center justify-center flex-shrink-0">
+              2
+            </div>
+            <div>
+              <div className="font-bold text-white">Event Folder Mein Daalein</div>
+              <p className="text-neutral-400 text-[11px] mt-0.5">
+                File ko computer ke us folder mein rakhein jahan aapke "Haldi", "Reception", etc. folders hain.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 p-3.5 bg-neutral-950/60 rounded-2xl border border-neutral-800/80">
+            <div className="w-7 h-7 rounded-xl bg-emerald-500/10 text-emerald-400 font-bold flex items-center justify-center flex-shrink-0">
+              3
+            </div>
+            <div>
+              <div className="font-bold text-white">Double-Click Run Karein</div>
+              <p className="text-neutral-400 text-[11px] mt-0.5">
+                Script 5 second mein sabhi photos copy karke folder khol degi. Kaam khatam!
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Alternative Export Tools: Lightroom / Excel */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        {/* Lightroom Filter Box */}
+        <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-white font-heading flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-amber-400" />
+              Lightroom / Capture One Filter Code
+            </h3>
+            <label className="text-[11px] text-neutral-400 flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeExtension}
+                onChange={(e) => setIncludeExtension(e.target.checked)}
+                className="rounded border-neutral-700 text-amber-500 focus:ring-0"
+              />
+              <span>With .JPG</span>
+            </label>
+          </div>
+
+          <p className="text-xs text-neutral-400 mb-3 leading-relaxed">
+            Lightroom ke "Library Filter (Text)" mein paste karein taaki selected photos turant filter ho sakein.
+          </p>
+
+          <div className="p-3 bg-neutral-950 rounded-xl border border-neutral-800 font-mono text-xs text-neutral-300 max-h-24 overflow-y-auto break-all select-all mb-4">
+            {selectedPhotos.length > 0
+              ? generateLightroomFilenames(activeEvent, includeExtension)
+              : 'No photos selected yet.'}
+          </div>
+
+          <button
+            onClick={handleCopyLightroom}
+            disabled={selectedPhotos.length === 0}
+            className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
+              copiedLightroom
+                ? 'bg-emerald-600 text-white'
+                : 'bg-neutral-800 hover:bg-neutral-750 text-white border border-neutral-700'
+            }`}
+          >
+            {copiedLightroom ? (
+              <>
+                <Check className="w-4 h-4" />
+                <span>Copied to Clipboard!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4 text-amber-400" />
+                <span>Copy Lightroom Filenames</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* CSV Summary Box */}
+        <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-white font-heading flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                Excel / CSV Selection Report
+              </h3>
+              <span className="text-[10px] text-neutral-500 uppercase font-mono">
+                {selectedPhotos.length} rows
+              </span>
+            </div>
+            <p className="text-xs text-neutral-400 mb-4 leading-relaxed">
+              Folder name, exact filename, selection date, aur client comments ke sath full spreadsheet report download karein.
+            </p>
+          </div>
+
+          <button
+            onClick={handleDownloadCsv}
+            disabled={selectedPhotos.length === 0}
+            className="w-full py-2.5 px-4 bg-neutral-800 hover:bg-neutral-750 text-white border border-neutral-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+          >
+            <Download className="w-4 h-4 text-emerald-400" />
+            <span>Download CSV Spreadsheet</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Folder-wise Breakdown Table */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 mb-8 shadow-xl">
+        <h3 className="text-sm font-bold text-white font-heading mb-4">
+          Folder-Wise Selection Breakdown
+        </h3>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-neutral-800 text-neutral-400 uppercase text-[10px] tracking-wider">
+                <th className="pb-3">Folder Name</th>
+                <th className="pb-3 text-center">Total Uploaded</th>
+                <th className="pb-3 text-center">Selected</th>
+                <th className="pb-3">Percentage Selected</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-800/60 font-mono text-neutral-300">
+              {folderStats.map((f) => (
+                <tr key={f.id} className="hover:bg-neutral-800/30">
+                  <td className="py-3 font-sans font-semibold text-white">{f.name}</td>
+                  <td className="py-3 text-center text-neutral-400">{f.total} photos</td>
+                  <td className="py-3 text-center text-rose-400 font-bold">
+                    ❤️ {f.selected}
+                  </td>
+                  <td className="py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-32 sm:w-48 h-2 bg-neutral-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-rose-500 to-amber-400"
+                          style={{ width: `${f.pct}%` }}
+                        />
+                      </div>
+                      <span className="text-[11px] text-neutral-400">{f.pct}%</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Selected Photos Gallery Grid */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h3 className="text-sm font-bold text-white font-heading">
+              Selected Photos Thumbnails ({selectedPhotos.length})
+            </h3>
+            <p className="text-xs text-neutral-400">
+              Yeh wo photos hain jo .bat script automatically copy karegi.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedFolderFilter}
+              onChange={(e) => setSelectedFolderFilter(e.target.value)}
+              className="bg-neutral-950 border border-neutral-800 text-neutral-300 text-xs rounded-xl px-3 py-1.5 focus:outline-none"
+            >
+              <option value="all">All Folders</option>
+              {activeEvent.folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+
+            <input
+              type="text"
+              placeholder="Search filename..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="bg-neutral-950 border border-neutral-800 text-neutral-200 text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-amber-500"
+            />
+          </div>
+        </div>
+
+        {displayedPhotos.length === 0 ? (
+          <div className="text-center py-12 text-neutral-500 text-xs">
+            No matching selected photos.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
+            {displayedPhotos.map((photo) => (
+              <div
+                key={photo.id}
+                className="group relative rounded-xl overflow-hidden aspect-[4/5] bg-neutral-950 border border-neutral-800"
+              >
+                <img
+                  src={photo.url}
+                  alt={photo.filename}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-80" />
+
+                <div className="absolute top-1.5 right-1.5 p-1 rounded-full bg-rose-500 text-white">
+                  <Heart className="w-3 h-3 fill-white" />
+                </div>
+
+                <div className="absolute bottom-1.5 left-1.5 right-1.5">
+                  <p className="text-[10px] font-mono font-medium text-white truncate">
+                    {photo.filename}
+                  </p>
+                  <p className="text-[9px] text-neutral-400 truncate">{photo.folderName}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

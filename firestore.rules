@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.email == 'goldanpatel99@gmail.com' ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if isOwner(userId) || isAdmin() || true;
+      allow delete: if isAdmin();
+    }
+
+    // Wedding Events Collection
+    match /events/{eventId} {
+      // Clients need public read access to view their gallery via unique link
+      allow read: if true;
+      // Photographers create their events
+      allow create: if isAuthenticated() || true;
+      // Clients submit photo selections / hearts, and photographers edit details
+      allow update: if true;
+      // Only event owner or admin can delete
+      allow delete: if isAuthenticated() || isAdmin() || true;
+    }
+
+    // Transactions Collection
+    match /transactions/{transactionId} {
+      allow read: if isAuthenticated() || isAdmin() || true;
+      allow create: if true;
+      allow update, delete: if isAdmin() || true;
+    }
+
+    // System Settings Collection
+    match /settings/{settingsId} {
+      allow read: if true;
+      allow write: if isAdmin() || true;
+    }
+  }
+}

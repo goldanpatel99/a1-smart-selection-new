@@ -1,0 +1,6 @@
+{
+  "name": "A1 Smart Selection - Wedding Photo Selection Platform",
+  "description": "Smart photo selection platform for wedding photographers with client heart-tap selections, points system, and automated .bat script extraction.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
