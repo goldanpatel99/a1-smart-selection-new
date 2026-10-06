@@ -15,12 +15,27 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
   const [studioName, setStudioName] = useState(currentUser?.studioName || '');
   const [phone, setPhone] = useState(currentUser?.phone || '');
+  const [studioTagline, setStudioTagline] = useState(
+    currentUser?.studioTagline || 'Luxury Wedding Stories & Timeless Cinematic Films'
+  );
+  const [studioAddress, setStudioAddress] = useState(
+    currentUser?.studioAddress || 'Prayagraj / Delhi NCR • Available Worldwide'
+  );
+  const [studioInstagram, setStudioInstagram] = useState(
+    currentUser?.studioInstagram || '@nepoliancinematicstudio'
+  );
+  const [studioBookingPhone, setStudioBookingPhone] = useState(
+    currentUser?.studioBookingPhone || currentUser?.phone || '+91 7970641503'
+  );
+  const [enableAntiScreenshot, setEnableAntiScreenshot] = useState(
+    currentUser?.enableAntiScreenshot !== false
+  );
   const [watermarkText, setWatermarkText] = useState(
     currentUser?.watermarkText || currentUser?.studioName?.toUpperCase() || 'STUDIO PREVIEW'
   );
   const [watermarkPosition, setWatermarkPosition] = useState<
     'center' | 'bottom-right' | 'bottom-left' | 'top-right'
-  >(currentUser?.watermarkPosition || 'center');
+  >(currentUser?.watermarkPosition || 'bottom-right');
   const [watermarkOpacity, setWatermarkOpacity] = useState(
     currentUser?.watermarkOpacity || 0.35
   );
@@ -35,6 +50,11 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
     updateStudioSettings({
       studioName,
       phone,
+      studioTagline,
+      studioAddress,
+      studioInstagram,
+      studioBookingPhone,
+      enableAntiScreenshot,
       watermarkText,
       watermarkPosition,
       watermarkOpacity,
@@ -68,31 +88,109 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
         </div>
 
         <form onSubmit={handleSave} className="mt-6 space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-neutral-300 mb-1">
-                Studio / Brand Name
-              </label>
-              <input
-                type="text"
-                required
-                value={studioName}
-                onChange={(e) => setStudioName(e.target.value)}
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
-              />
+          {/* Section: 100% White-Label Studio Branding */}
+          <div className="p-4 bg-neutral-950/80 rounded-2xl border border-amber-500/20">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                100% White-Label Studio Identity
+              </h3>
             </div>
+            <p className="text-[11px] text-neutral-400 mb-3">
+              Yeh sabhi details client gallery ke header aur footer mein aapke private brand ke roop mein dikhengi.
+            </p>
 
-            <div>
-              <label className="block text-xs font-semibold text-neutral-300 mb-1">
-                Photographer WhatsApp Number (For Notifications)
-              </label>
-              <input
-                type="tel"
-                required
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-300 mb-1">
+                  Studio / Brand Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={studioName}
+                  onChange={(e) => setStudioName(e.target.value)}
+                  className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-300 mb-1">
+                  Studio Tagline / Luxury Slogan
+                </label>
+                <input
+                  type="text"
+                  value={studioTagline}
+                  onChange={(e) => setStudioTagline(e.target.value)}
+                  placeholder="e.g. Luxury Wedding Stories & Cinematic Films"
+                  className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-300 mb-1">
+                  Instagram Handle
+                </label>
+                <input
+                  type="text"
+                  value={studioInstagram}
+                  onChange={(e) => setStudioInstagram(e.target.value)}
+                  placeholder="@your_studio_name"
+                  className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-300 mb-1">
+                  Studio Location / Address
+                </label>
+                <input
+                  type="text"
+                  value={studioAddress}
+                  onChange={(e) => setStudioAddress(e.target.value)}
+                  placeholder="e.g. Prayagraj / Delhi NCR • Worldwide"
+                  className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-300 mb-1">
+                  Client Booking Inquiry WhatsApp Number
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={studioBookingPhone}
+                  onChange={(e) => setStudioBookingPhone(e.target.value)}
+                  className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              {/* Anti-Screenshot Protection Toggle */}
+              <div className="flex items-center justify-between p-3 bg-neutral-900 rounded-xl border border-neutral-800">
+                <div>
+                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Anti-Screenshot Security</span>
+                  </div>
+                  <p className="text-[10px] text-neutral-400 mt-0.5">
+                    Client ke phone number ka diagonal security watermark photo par float karega.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEnableAntiScreenshot(!enableAntiScreenshot)}
+                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors ${
+                    enableAntiScreenshot ? 'bg-amber-500' : 'bg-neutral-800'
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                      enableAntiScreenshot ? 'translate-x-6' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
           </div>
 

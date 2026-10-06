@@ -44,6 +44,7 @@ export function generateBatScript(event: WeddingEvent): string {
 
   selectedPhotos.forEach((photo) => {
     const filename = photo.filename;
+    const baseName = filename.replace(/\.[^/.]+$/, '');
     const folder = (photo.folderName || 'Selected').replace(/[/\\?%*:|"<>]/g, '_');
 
     lines.push(`if exist "${folder}\\${filename}" (`);
@@ -54,6 +55,14 @@ export function generateBatScript(event: WeddingEvent): string {
     lines.push(`    copy /Y "${filename}" "Selected_Photos\\${folder}\\" >nul`);
     lines.push(`    set /a copied+=1`);
     lines.push(`    echo [OK] Copied ${filename} to ${folder}`);
+    lines.push(`) else if exist "${folder}\\${baseName}.*" (`);
+    lines.push(`    copy /Y "${folder}\\${baseName}.*" "Selected_Photos\\${folder}\\" >nul`);
+    lines.push(`    set /a copied+=1`);
+    lines.push(`    echo [OK] Copied RAW/matching file for ${baseName}`);
+    lines.push(`) else if exist "${baseName}.*" (`);
+    lines.push(`    copy /Y "${baseName}.*" "Selected_Photos\\${folder}\\" >nul`);
+    lines.push(`    set /a copied+=1`);
+    lines.push(`    echo [OK] Copied RAW/matching file for ${baseName}`);
     lines.push(`) else if exist "..\\${folder}\\${filename}" (`);
     lines.push(`    copy /Y "..\\${folder}\\${filename}" "Selected_Photos\\${folder}\\" >nul`);
     lines.push(`    set /a copied+=1`);

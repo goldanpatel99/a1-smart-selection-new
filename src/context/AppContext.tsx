@@ -8,6 +8,7 @@ import {
   PhotoFolder,
 } from '../types';
 import { storage } from '../utils/storage';
+import { idbStorage } from '../utils/idbStorage';
 import { firebaseService } from '../services/firebaseService';
 
 export type AppView =
@@ -41,16 +42,26 @@ interface AppContextType {
   removeToast: (id: string) => void;
 
   // Auth
-  login: (email: string, role?: 'photographer' | 'admin') => boolean;
-  signup: (data: { name: string; email: string; phone: string; studioName: string }) => boolean;
+  login: (email: string, role?: 'photographer' | 'admin', password?: string) => boolean;
+  signup: (data: {
+    name: string;
+    email: string;
+    phone: string;
+    studioName: string;
+    password?: string;
+  }) => boolean;
   logout: () => void;
   switchUser: (userId: string) => void;
   updateStudioSettings: (settings: Partial<User>) => void;
 
   // Points
-  buyPoints: (packageId: string, paymentMethod?: string) => Promise<boolean>;
+  buyPoints: (
+    packageId: string,
+    paymentMethod?: string,
+    paymentDetails?: { paymentId?: string; orderId?: string }
+  ) => Promise<boolean>;
   adminAddPoints: (userId: string, points: number, reason: string) => void;
-  adminResetPassword: (userId: string) => string;
+  adminResetPassword: (userId: string, customPass?: string) => string;
   adminUpdateSettings: (newSettings: AdminSettings) => void;
 
   // Events
@@ -63,6 +74,7 @@ interface AppContextType {
     deadlineDays: number;
     maxSelectionLimit?: number;
     photosPerSheet?: number;
+    coupleStory?: string;
   }) => { success: boolean; error?: string; eventId?: string };
   extendDeadline: (eventId: string, days?: number) => { success: boolean; error?: string };
   updateEvent: (eventId: string, data: Partial<WeddingEvent>) => void;
@@ -134,10 +146,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     const unsubEvents = firebaseService.subscribeEvents((cloudEvents) => {
       setEvents((prev) => {
-        const map = new Map<string, WeddingEvent>();
-        prev.forEach((e) => map.set(e.id, e));
-        cloudEvents.forEach((e) => map.set(e.id, e));
-        return Array.from(map.values());
+        const prevMap = new Map<string, WeddingEvent>();
+        prev.forEach((e) => prevMap.set(e.id, e));
+        return cloudEvents.map((ce) => {
+          const existing = prevMap.get(ce.id);
+          return {
+            ...ce,
+            // Preserve in-memory photos if already loaded, avoiding empty cloud overwrite
+            photos: existing && existing.photos.length > 0 ? existing.photos : ce.photos || [],
+            photosCount: ce.photosCount ?? (existing?.photos.length || 0),
+          };
+        });
       });
     });
 
@@ -172,6 +191,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubSettings();
     };
   }, []);
+
+  // Synchronize photos for active event from Cloud Firestore in real time (cross-device sync!)
+  useEffect(() => {
+    if (!activeEventId) return;
+
+    // 1. First check local IndexedDB cache for immediate offline rendering
+    idbStorage.getEventPhotos(activeEventId).then((cached) => {
+      if (cached && cached.length > 0) {
+        setEvents((prev) =>
+          prev.map((e) =>
+            e.id === activeEventId && e.photos.length === 0
+              ? {
+                  ...e,
+                  photos: cached,
+                  photosCount: cached.length,
+                  coverPhotoUrl: e.coverPhotoUrl || cached[0]?.url,
+                }
+              : e
+          )
+        );
+      }
+    });
+
+    // 2. Real-time Firestore subcollection listener for live cross-device photo sync
+    const unsubPhotos = firebaseService.subscribeEventPhotos(activeEventId, (cloudPhotos) => {
+      if (cloudPhotos && cloudPhotos.length > 0) {
+        setEvents((prev) =>
+          prev.map((e) => {
+            if (e.id !== activeEventId) return e;
+            return {
+              ...e,
+              photos: cloudPhotos,
+              photosCount: cloudPhotos.length,
+              selectedCount: cloudPhotos.filter((p) => p.isSelected).length,
+              coverPhotoUrl: e.coverPhotoUrl || cloudPhotos[0]?.url,
+            };
+          })
+        );
+        // Cache to IDB
+        idbStorage.saveEventPhotos(activeEventId, cloudPhotos);
+      }
+    });
+
+    return () => {
+      unsubPhotos();
+    };
+  }, [activeEventId]);
 
   // Handle URL hash routing on initial load
   useEffect(() => {
@@ -233,9 +299,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const login = (email: string, role: 'photographer' | 'admin' = 'photographer'): boolean => {
+  const login = (
+    email: string,
+    role: 'photographer' | 'admin' = 'photographer',
+    password?: string
+  ): boolean => {
     const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
     if (user) {
+      if (password && user.password && user.password !== password) {
+        showToast('Galat password! Kripya sahi password enter karein.', 'error');
+        return false;
+      }
       setCurrentUserId(user.id);
       showToast(`Welcome back, ${user.name}!`, 'success');
       if (user.role === 'admin' || role === 'admin') {
@@ -245,16 +319,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return true;
     } else {
-      // Auto-create or login with demo
-      showToast('Account not found. Please sign up or choose a demo login.', 'error');
+      showToast('Account nahi mila. Kripya pehle New Studio Registration karein.', 'error');
       return false;
     }
   };
 
-  const signup = (data: { name: string; email: string; phone: string; studioName: string }): boolean => {
+  const signup = (data: {
+    name: string;
+    email: string;
+    phone: string;
+    studioName: string;
+    password?: string;
+  }): boolean => {
     const existing = users.find((u) => u.email.toLowerCase() === data.email.toLowerCase());
     if (existing) {
-      showToast('An account with this email already exists. Please login.', 'error');
+      showToast('Is email se account pehle se bana hua hai. Kripya login karein.', 'error');
       return false;
     }
 
@@ -263,18 +342,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       name: data.name,
       email: data.email,
       phone: data.phone,
+      password: data.password || '123456',
       studioName: data.studioName,
       role: 'photographer',
       points: 0, // MUST start with 0 points per user specification!
       createdAt: new Date().toISOString(),
       watermarkText: data.studioName.toUpperCase(),
-      watermarkPosition: 'center',
+      watermarkPosition: 'bottom-right',
       watermarkOpacity: 0.35,
     };
 
     setUsers((prev) => [...prev, newUser]);
     setCurrentUserId(newUser.id);
-    showToast(`Account created successfully! Your starting balance is 0 points.`, 'success');
+    firebaseService.saveUser(newUser);
+    showToast(`Studio successfully registered! Aapka starting balance is 0 points.`, 'success');
     navigateTo('dashboard');
     return true;
   };
@@ -306,7 +387,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Studio settings saved!', 'success');
   };
 
-  const buyPoints = async (packageId: string, paymentMethod = 'UPI'): Promise<boolean> => {
+  const buyPoints = async (
+    packageId: string,
+    paymentMethod = 'Razorpay',
+    paymentDetails?: { paymentId?: string; orderId?: string }
+  ): Promise<boolean> => {
     if (!currentUser) {
       showToast('Please login to buy points', 'error');
       return false;
@@ -319,6 +404,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const newPoints = currentUser.points + pkg.points;
+    const refText = paymentDetails?.paymentId ? ` • Ref: ${paymentDetails.paymentId}` : '';
     const newTx: PointTransaction = {
       id: `tx-${Date.now()}`,
       userId: currentUser.id,
@@ -326,7 +412,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type: 'credit',
       amount: pkg.points,
       amountRupees: pkg.priceRupees,
-      description: `Points Recharge: ${pkg.name} (${pkg.points} points)`,
+      description: `Points Recharge: ${pkg.name} (${pkg.points} points)${refText}`,
       balanceAfter: newPoints,
       createdAt: new Date().toISOString(),
       paymentMethod,
@@ -336,7 +422,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((u) => (u.id === currentUser.id ? { ...u, points: newPoints } : u))
     );
     setTransactions((prev) => [newTx, ...prev]);
-    showToast(`Payment of ₹${pkg.priceRupees} successful! ${pkg.points} points credited to your studio balance.`, 'success');
+    showToast(`Payment of ₹${pkg.priceRupees} verified! ${pkg.points} points credited instantly to your studio balance.`, 'success');
     return true;
   };
 
@@ -364,11 +450,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`${points >= 0 ? 'Added' : 'Deducted'} ${Math.abs(points)} points for ${targetUser.name}`, 'success');
   };
 
-  const adminResetPassword = (userId: string): string => {
-    const tempPass = `A1-${Math.floor(100000 + Math.random() * 900000)}`;
+  const adminResetPassword = (userId: string, customPass?: string): string => {
+    const newPass = customPass?.trim() || `A1-${Math.floor(100000 + Math.random() * 900000)}`;
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u.id === userId) {
+          const updated = { ...u, password: newPass };
+          firebaseService.saveUser(updated);
+          return updated;
+        }
+        return u;
+      })
+    );
     const user = users.find((u) => u.id === userId);
-    showToast(`Password reset for ${user?.name || 'User'}: ${tempPass}`, 'info');
-    return tempPass;
+    showToast(`Password updated for ${user?.name || 'Photographer'}: ${newPass}`, 'success');
+    return newPass;
   };
 
   const adminUpdateSettings = (newSettings: AdminSettings) => {
@@ -385,6 +481,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     deadlineDays: number;
     maxSelectionLimit?: number;
     photosPerSheet?: number;
+    coupleStory?: string;
   }) => {
     if (!currentUser) {
       return { success: false, error: 'Please login first' };
@@ -438,6 +535,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deadlineDate: deadlineDate.toISOString().split('T')[0],
       maxSelectionLimit: data.maxSelectionLimit,
       photosPerSheet: data.photosPerSheet || currentUser.defaultPhotosPerSheet || 6,
+      coupleStory: data.coupleStory,
       folders: defaultFolders,
       photos: [],
       createdAt: new Date().toISOString(),
@@ -513,6 +611,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteEvent = (eventId: string) => {
     setEvents((prev) => prev.filter((e) => e.id !== eventId));
     firebaseService.deleteEvent(eventId);
+    idbStorage.deleteEventPhotos(eventId);
     showToast('Event deleted', 'info');
   };
 
@@ -526,7 +625,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           visible: true,
           order: e.folders.length,
         };
-        return { ...e, folders: [...e.folders, newFolder] };
+        const updated = { ...e, folders: [...e.folders, newFolder] };
+        firebaseService.saveEvent(updated);
+        return updated;
       })
     );
     showToast(`Folder "${folderName}" added!`, 'success');
@@ -536,11 +637,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
-        return {
+        const deletedPhotos = e.photos.filter((p) => p.folderId === folderId);
+        deletedPhotos.forEach((p) => {
+          firebaseService.deletePhoto(eventId, p.id);
+          idbStorage.deleteEventPhotos(eventId, p.id);
+        });
+        const updated = {
           ...e,
           folders: e.folders.filter((f) => f.id !== folderId),
           photos: e.photos.filter((p) => p.folderId !== folderId),
         };
+        firebaseService.saveEvent(updated);
+        return updated;
       })
     );
     showToast('Folder deleted', 'info');
@@ -550,12 +658,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
-        return {
+        const updated = {
           ...e,
           folders: e.folders.map((f) =>
             f.id === folderId ? { ...f, visible: !f.visible } : f
           ),
         };
+        firebaseService.saveEvent(updated);
+        return updated;
       })
     );
   };
@@ -564,11 +674,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     eventId: string,
     newPhotosData: Omit<Photo, 'id' | 'isSelected' | 'uploadedAt'>[]
   ) => {
+    // Auto-detect and sync exact folder names
+    let formattedPhotos: Photo[] = [];
+
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
 
-        // Auto-detect and sync exact folder names
         const existingFolders = [...e.folders];
         const folderNameToIdMap = new Map<string, string>();
         existingFolders.forEach((f) => folderNameToIdMap.set(f.name.toLowerCase(), f.id));
@@ -589,12 +701,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         });
 
-        const formattedPhotos: Photo[] = newPhotosData.map((p, idx) => {
+        formattedPhotos = newPhotosData.map((p, idx) => {
           const rawName = (p.folderName || 'Photos').trim();
           const matchedFolderId = folderNameToIdMap.get(rawName.toLowerCase()) || p.folderId;
           return {
             ...p,
-            id: `p-${Date.now()}-${idx}`,
+            id: `p-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
             folderId: matchedFolderId,
             folderName: rawName,
             isSelected: false,
@@ -604,28 +716,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const updatedPhotos = [...e.photos, ...formattedPhotos];
         const coverPhoto = e.coverPhotoUrl || (updatedPhotos.length > 0 ? updatedPhotos[0].url : undefined);
-        return {
+
+        const updatedEvent: WeddingEvent = {
           ...e,
           folders: existingFolders,
           photos: updatedPhotos,
+          photosCount: updatedPhotos.length,
           coverPhotoUrl: coverPhoto,
         };
+
+        // Persist parent event metadata
+        firebaseService.saveEvent(updatedEvent);
+
+        return updatedEvent;
       })
     );
 
-    showToast(`${newPhotosData.length} photos uploaded across folder(s)!`, 'success');
+    // Save individual photo documents to Cloud Firestore subcollection (cross-device persistent!)
+    if (formattedPhotos.length > 0) {
+      firebaseService.savePhotos(eventId, formattedPhotos);
+      idbStorage.saveEventPhotos(eventId, formattedPhotos);
+    }
+
+    showToast(`${newPhotosData.length} photos uploaded and saved to Cloud Firestore!`, 'success');
   };
 
   const deletePhotoFromEvent = (eventId: string, photoId: string) => {
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
+        const updatedPhotos = e.photos.filter((p) => p.id !== photoId);
         return {
           ...e,
-          photos: e.photos.filter((p) => p.id !== photoId),
+          photos: updatedPhotos,
+          photosCount: updatedPhotos.length,
+          selectedCount: updatedPhotos.filter((p) => p.isSelected).length,
         };
       })
     );
+    firebaseService.deletePhoto(eventId, photoId);
+    idbStorage.deleteEventPhotos(eventId, photoId);
   };
 
   const togglePhotoSelection = (eventId: string, photoId: string) => {
@@ -642,17 +772,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return e;
         }
 
+        const selectedAt = willSelect ? new Date().toISOString() : undefined;
+
+        // Persist photo selection state to Cloud Firestore
+        firebaseService.updatePhoto(eventId, photoId, {
+          isSelected: willSelect,
+          selectedAt: selectedAt || undefined,
+        });
+
+        const updatedPhotos = e.photos.map((p) =>
+          p.id === photoId
+            ? {
+                ...p,
+                isSelected: willSelect,
+                selectedAt: selectedAt,
+              }
+            : p
+        );
+
         return {
           ...e,
-          photos: e.photos.map((p) =>
-            p.id === photoId
-              ? {
-                  ...p,
-                  isSelected: willSelect,
-                  selectedAt: willSelect ? new Date().toISOString() : undefined,
-                }
-              : p
-          ),
+          photos: updatedPhotos,
+          selectedCount: updatedPhotos.filter((p) => p.isSelected).length,
         };
       })
     );

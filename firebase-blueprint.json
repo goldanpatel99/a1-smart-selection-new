@@ -11,6 +11,7 @@
         "role": { "type": "string", "enum": ["photographer", "admin"] },
         "studioName": { "type": "string" },
         "phone": { "type": "string" },
+        "password": { "type": "string" },
         "points": { "type": "number" },
         "watermarkText": { "type": "string" },
         "watermarkPosition": { "type": "string" },
@@ -68,6 +69,24 @@
         "pointsPerExtension": { "type": "number" }
       },
       "required": ["id", "upiId", "payeeName", "adminWhatsApp"]
+    },
+    "Photo": {
+      "title": "Photo",
+      "description": "Compressed watermarked photo within a wedding event gallery",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "filename": { "type": "string" },
+        "originalName": { "type": "string" },
+        "folderId": { "type": "string" },
+        "folderName": { "type": "string" },
+        "url": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "sizeBytes": { "type": "number" },
+        "isSelected": { "type": "boolean" },
+        "uploadedAt": { "type": "string" }
+      },
+      "required": ["id", "filename", "folderName", "url", "isSelected", "uploadedAt"]
     }
   },
   "firestore": {
@@ -78,6 +97,10 @@
     "/events/{eventId}": {
       "schema": "WeddingEvent",
       "description": "Wedding events and client photo galleries"
+    },
+    "/events/{eventId}/photos/{photoId}": {
+      "schema": "Photo",
+      "description": "Individual compressed photo previews stored in event subcollection"
     },
     "/transactions/{transactionId}": {
       "schema": "Transaction",

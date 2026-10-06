@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
 import { MessageCircle, Phone, Mail, Award, X, Sparkles, ExternalLink, ShieldCheck } from 'lucide-react';
+import { useApp } from '../context/AppContext';
 
 export const WhatsAppSupportButton: React.FC = () => {
+  const { currentView } = useApp();
   const [isOpen, setIsOpen] = useState(false);
+
+  // Strictly bottom-right corner for photographers; do not disturb couples in client gallery
+  if (currentView === 'client-gallery') return null;
 
   const whatsappNumber = '7970641503';
   const whatsappUrl = `https://wa.me/91${whatsappNumber}?text=${encodeURIComponent(

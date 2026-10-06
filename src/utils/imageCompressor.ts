@@ -16,7 +16,7 @@ export function compressAndWatermarkImage(
     maxHeight = 1000,
     quality = 0.78,
     watermarkText = '',
-    watermarkPosition = 'center',
+    watermarkPosition = 'bottom-right',
     watermarkOpacity = 0.35,
   } = options;
 

@@ -38,6 +38,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [deadlineDays, setDeadlineDays] = useState(6);
   const [maxSelectionLimit, setMaxSelectionLimit] = useState<number | undefined>(80);
   const [limitEnabled, setLimitEnabled] = useState(false);
+  const [coupleStory, setCoupleStory] = useState('');
   const [photosPerSheet, setPhotosPerSheet] = useState<number>(
     currentUser?.defaultPhotosPerSheet || 6
   );
@@ -61,6 +62,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       deadlineDays: Number(deadlineDays),
       maxSelectionLimit: limitEnabled ? Number(maxSelectionLimit) : undefined,
       photosPerSheet: Number(photosPerSheet) || 6,
+      coupleStory: coupleStory.trim() || undefined,
     });
 
     if (res.success && res.eventId) {
@@ -68,6 +70,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       setCoupleName('');
       setClientPhone('');
       setClientEmail('');
+      setCoupleStory('');
       setLimitEnabled(false);
       onClose();
       // Jump straight to upload photos page
@@ -234,18 +237,20 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-neutral-300 mb-1">
-                  Selection Deadline (Days)
+                  Selection Deadline
                 </label>
-                <select
-                  value={deadlineDays}
-                  onChange={(e) => setDeadlineDays(Number(e.target.value))}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
-                >
-                  <option value={6}>6 Days (Standard Deadline)</option>
-                  <option value={10}>10 Days</option>
-                  <option value={15}>15 Days</option>
-                  <option value={30}>30 Days</option>
-                </select>
+                <div className="w-full bg-neutral-950 border border-amber-500/40 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span className="text-sm font-bold text-amber-300 font-mono">6 Days</span>
+                    <span className="text-[10px] uppercase font-bold text-neutral-400 bg-neutral-900 border border-neutral-800 px-2 py-0.5 rounded">
+                      Strictly Automatic
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-neutral-500 mt-1">
+                  Auto 6 days set. Baad mein extend karne ke liye +6 days ka 1 point lagega.
+                </p>
               </div>
             </div>
 
@@ -286,6 +291,23 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   Unlimited selection allowed (Client can choose as many as they want).
                 </p>
               )}
+            </div>
+
+            {/* Romantic Couple Story / Welcome Note (Optional) */}
+            <div>
+              <label className="block text-xs font-semibold text-neutral-300 mb-1">
+                Couple Story / Welcome Message (Optional)
+              </label>
+              <textarea
+                rows={2}
+                value={coupleStory}
+                onChange={(e) => setCoupleStory(e.target.value)}
+                placeholder='e.g. "Two souls with but a single thought, two hearts that beat as one. Welcome to our sacred wedding memories!"'
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 resize-none"
+              />
+              <p className="text-[10px] text-neutral-500 mt-0.5">
+                Client gallery open karte waqt background music ke sath romantic welcome screen par show hoga.
+              </p>
             </div>
 
             {/* Album Sheet Estimator Formula Setting */}

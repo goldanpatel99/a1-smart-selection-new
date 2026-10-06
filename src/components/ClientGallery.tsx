@@ -18,10 +18,19 @@ import {
   Eye,
   Camera,
   BookOpen,
+  Music,
+  Wifi,
+  WifiOff,
+  ShieldCheck,
+  Instagram,
+  PhoneCall,
 } from 'lucide-react';
+import { CoupleHeroWelcomeModal } from './CoupleHeroWelcomeModal';
+import { DynamicSecurityWatermark } from './DynamicSecurityWatermark';
+import { useOfflineSync } from '../hooks/useOfflineSync';
 
 export const ClientGallery: React.FC = () => {
-  const { activeEvent, togglePhotoSelection, submitClientSelection, navigateTo } = useApp();
+  const { activeEvent, users, togglePhotoSelection, submitClientSelection, navigateTo, showToast } = useApp();
 
   const [activeFolderId, setActiveFolderId] = useState<string>('all');
   const [filterMode, setFilterMode] = useState<'all' | 'selected' | 'unselected'>('all');
@@ -30,12 +39,50 @@ export const ClientGallery: React.FC = () => {
   const [isSubmitted, setIsSubmitted] = useState(activeEvent?.status === 'completed');
   const [clientNotes, setClientNotes] = useState(activeEvent?.clientNotes || '');
   const [copiedLink, setCopiedLink] = useState(false);
+  const [showHeroWelcome, setShowHeroWelcome] = useState(true);
+
+  // Offline Mode & Slow Network Auto-Saver
+  const { isOnline, pendingCount, isSyncing, enqueuePhotoSync } = useOfflineSync(showToast);
+
+  // Find photographer for 100% white-label branding
+  const photographer = activeEvent
+    ? users.find((u) => u.id === activeEvent.photographerId)
+    : undefined;
 
   useEffect(() => {
     if (activeEvent?.status === 'completed') {
       setIsSubmitted(true);
     }
   }, [activeEvent?.status]);
+
+  // Anti-Theft Security: Disable Right-Click, Image Dragging & Print/Save Shortcuts
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      showToast('🛡️ Selection Preview Protected • Direct downloading and right-click is disabled by studio.', 'info');
+    };
+
+    const handleDragStart = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'p')) {
+        e.preventDefault();
+        showToast('🛡️ Page saving and printing is disabled for preview protection.', 'info');
+      }
+    };
+
+    window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('dragstart', handleDragStart);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('dragstart', handleDragStart);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showToast]);
 
   if (!activeEvent) {
     return (
@@ -329,18 +376,58 @@ export const ClientGallery: React.FC = () => {
             </div>
           </div>
 
-          {/* Right: Submit Button */}
-          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+          {/* Right: Music, Offline Status & Submit Button */}
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            {/* Romantic Music & Story Hero Button */}
+            <button
+              type="button"
+              onClick={() => setShowHeroWelcome(true)}
+              className="px-3 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-850 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+              title="Romantic Wedding Music & Story"
+            >
+              <Music className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden md:inline">Music & Story</span>
+            </button>
+
+            {/* Offline Auto-Saver Status Pill */}
+            <div
+              className={`px-2.5 py-1.5 rounded-xl text-[11px] font-mono flex items-center gap-1.5 border transition-all ${
+                !isOnline
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/30 animate-pulse'
+                  : pendingCount > 0
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+              }`}
+              title={!isOnline ? 'Offline mode active - saved locally' : 'Sync status'}
+            >
+              {!isOnline ? (
+                <>
+                  <WifiOff className="w-3.5 h-3.5 text-rose-400" />
+                  <span className="font-sans font-bold">Offline Saved</span>
+                </>
+              ) : pendingCount > 0 || isSyncing ? (
+                <>
+                  <Wifi className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                  <span>Syncing ({pendingCount})...</span>
+                </>
+              ) : (
+                <>
+                  <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="hidden xl:inline">Cloud Synced</span>
+                </>
+              )}
+            </div>
+
             <button
               onClick={() => setShowFinishModal(true)}
-              className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-all ${
+              className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-all ${
                 isSubmitted
                   ? 'bg-emerald-600 text-white'
                   : 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 hover:from-amber-400 hover:to-amber-200 text-neutral-950 shadow-amber-500/20 hover:scale-105'
               }`}
             >
               <Check className="w-4 h-4 stroke-[3]" />
-              <span>{isSubmitted ? '✓ Selection Finished' : 'Finish Selection & Submit'}</span>
+              <span>{isSubmitted ? '✓ Selection Finished' : 'Finish & Submit'}</span>
             </button>
           </div>
         </div>
@@ -443,15 +530,25 @@ export const ClientGallery: React.FC = () => {
 
         {/* Photo Gallery Grid */}
         {filteredPhotos.length === 0 ? (
-          <div className="text-center py-20 bg-neutral-900/30 rounded-3xl border border-neutral-800/80 my-8">
-            <Heart className="w-12 h-12 text-neutral-600 mx-auto mb-3" />
-            <p className="text-sm font-bold text-white mb-1">No Photos Found</p>
-            <p className="text-xs text-neutral-400">
-              {filterMode === 'selected'
-                ? 'Aapne is category mein abhi tak koi photo select nahi ki hai.'
-                : 'No photos in this folder.'}
-            </p>
-          </div>
+          activeEvent.photos.length === 0 && (activeEvent.photosCount || 0) > 0 ? (
+            <div className="text-center py-20 bg-neutral-900/30 rounded-3xl border border-neutral-800/80 my-8">
+              <Sparkles className="w-10 h-10 text-amber-400 animate-pulse mx-auto mb-3" />
+              <p className="text-sm font-bold text-white mb-1">Loading Photos From Cloud...</p>
+              <p className="text-xs text-neutral-400">
+                Wedding photos are syncing from Cloud Firestore ({activeEvent.photosCount} photos).
+              </p>
+            </div>
+          ) : (
+            <div className="text-center py-20 bg-neutral-900/30 rounded-3xl border border-neutral-800/80 my-8">
+              <Heart className="w-12 h-12 text-neutral-600 mx-auto mb-3" />
+              <p className="text-sm font-bold text-white mb-1">No Photos Found</p>
+              <p className="text-xs text-neutral-400">
+                {filterMode === 'selected'
+                  ? 'Aapne is category mein abhi tak koi photo select nahi ki hai.'
+                  : 'No photos in this folder.'}
+              </p>
+            </div>
+          )
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4 my-6">
             {filteredPhotos.map((photo, index) => {
@@ -471,14 +568,26 @@ export const ClientGallery: React.FC = () => {
                     alt={photo.filename}
                     loading="lazy"
                     onClick={() => setLightboxIndex(index)}
-                    className="w-full h-full object-cover cursor-zoom-in group-hover:scale-105 transition-transform duration-500"
+                    onContextMenu={(e) => e.preventDefault()}
+                    onDragStart={(e) => e.preventDefault()}
+                    className="w-full h-full object-cover cursor-zoom-in group-hover:scale-105 transition-transform duration-500 select-none pointer-events-none"
+                    style={{ WebkitTouchCallout: 'none' }}
                   />
+
+                  {/* Anti-Screenshot Dynamic Floating Watermark */}
+                  {photographer?.enableAntiScreenshot !== false && (
+                    <DynamicSecurityWatermark
+                      studioName={activeEvent.studioName}
+                      clientPhone={activeEvent.clientPhone}
+                      opacity={0.22}
+                    />
+                  )}
 
                   {/* Gradient shadow */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
 
                   {/* Folder Tag */}
-                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-[10px] font-semibold text-neutral-300">
+                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-[10px] font-semibold text-neutral-300 z-20">
                     {photo.folderName}
                   </div>
 
@@ -488,8 +597,12 @@ export const ClientGallery: React.FC = () => {
                     onClick={(e) => {
                       e.stopPropagation();
                       togglePhotoSelection(activeEvent.id, photo.id);
+                      enqueuePhotoSync(activeEvent.id, photo.id, {
+                        isSelected: !photo.isSelected,
+                        selectedAt: !photo.isSelected ? new Date().toISOString() : undefined,
+                      });
                     }}
-                    className={`absolute top-2 right-2 w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                    className={`absolute top-2 right-2 w-10 h-10 rounded-full flex items-center justify-center transition-all z-20 ${
                       isSelected
                         ? 'bg-rose-500 text-white scale-110 shadow-lg shadow-rose-500/50'
                         : 'bg-black/60 text-white hover:bg-black/80 hover:scale-110'
@@ -589,11 +702,25 @@ export const ClientGallery: React.FC = () => {
               </button>
             )}
 
-            <img
-              src={filteredPhotos[lightboxIndex].url}
-              alt={filteredPhotos[lightboxIndex].filename}
-              className="max-h-[82vh] max-w-[92vw] object-contain rounded-lg shadow-2xl transition-all"
-            />
+            <div className="relative max-h-[82vh] max-w-[92vw] overflow-hidden rounded-xl shadow-2xl flex items-center justify-center">
+              <img
+                src={filteredPhotos[lightboxIndex].url}
+                alt={filteredPhotos[lightboxIndex].filename}
+                onContextMenu={(e) => e.preventDefault()}
+                onDragStart={(e) => e.preventDefault()}
+                className="max-h-[82vh] max-w-[92vw] object-contain rounded-xl transition-all select-none pointer-events-none"
+                style={{ WebkitTouchCallout: 'none' }}
+              />
+
+              {/* Anti-Screenshot Dynamic Security Watermark in Fullscreen */}
+              {photographer?.enableAntiScreenshot !== false && (
+                <DynamicSecurityWatermark
+                  studioName={activeEvent.studioName}
+                  clientPhone={activeEvent.clientPhone}
+                  opacity={0.25}
+                />
+              )}
+            </div>
 
             {/* Next arrow */}
             {lightboxIndex < filteredPhotos.length - 1 && (
@@ -722,6 +849,79 @@ export const ClientGallery: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* 100% White-Label Studio Luxury Footer */}
+      <footer className="mt-20 border-t border-neutral-900 bg-neutral-950 py-12 px-4 sm:px-6 lg:px-8 text-center select-none">
+        <div className="max-w-3xl mx-auto space-y-5">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+            <Camera className="w-3.5 h-3.5 text-amber-400" />
+            <span>Photography & Cinematography</span>
+          </div>
+
+          <div>
+            <h2 className="text-xl sm:text-2xl font-extrabold font-heading text-white tracking-wide">
+              {activeEvent.studioName}
+            </h2>
+            <p className="text-xs text-neutral-400 mt-1 max-w-md mx-auto">
+              {photographer?.studioTagline || 'Luxury Wedding Stories & Timeless Cinematic Films'}
+            </p>
+            {photographer?.studioAddress && (
+              <p className="text-[11px] text-neutral-500 mt-1 font-mono">
+                📍 {photographer.studioAddress}
+              </p>
+            )}
+          </div>
+
+          {/* Word-of-mouth & Wedding Guest Inquiry Buttons */}
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <a
+              href={`https://wa.me/${(photographer?.studioBookingPhone || activeEvent.clientPhone || '').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                `Hello ${activeEvent.studioName}, I viewed the wedding gallery of ${activeEvent.coupleName} on your portal and would like to inquire about wedding photography packages.`
+              )}`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-2 transition-all hover:scale-105"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span>Book {activeEvent.studioName} on WhatsApp</span>
+            </a>
+
+            {photographer?.studioInstagram && (
+              <a
+                href={`https://instagram.com/${photographer.studioInstagram.replace('@', '')}`}
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white font-semibold text-xs rounded-xl flex items-center gap-2 transition-colors"
+              >
+                <Instagram className="w-3.5 h-3.5 text-pink-400" />
+                <span>Follow {photographer.studioInstagram}</span>
+              </a>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowHeroWelcome(true)}
+              className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-amber-300 font-semibold text-xs rounded-xl flex items-center gap-2 transition-colors"
+            >
+              <Music className="w-3.5 h-3.5 text-amber-400" />
+              <span>Play Wedding Music & Story</span>
+            </button>
+          </div>
+
+          <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-400 pt-4 border-t border-neutral-900 font-mono">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Private & Confidential Selection Gallery • Copyright © {new Date().getFullYear()} {activeEvent.studioName}</span>
+          </div>
+        </div>
+      </footer>
+
+      {/* Romantic Hero Welcome Screen with Music & Story */}
+      <CoupleHeroWelcomeModal
+        isOpen={showHeroWelcome}
+        onClose={() => setShowHeroWelcome(false)}
+        event={activeEvent}
+        photographer={photographer}
+      />
     </div>
   );
 };

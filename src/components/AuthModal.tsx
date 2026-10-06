@@ -38,13 +38,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         email: email.trim(),
         phone: phone.trim(),
         studioName: studioName.trim(),
+        password: password.trim(),
       });
       if (success) onClose();
     } else if (mode === 'admin') {
-      const success = login(email.trim() || 'admin@nepoliancinematicstudio.com', 'admin');
+      const success = login(
+        email.trim() || 'admin@nepoliancinematicstudio.com',
+        'admin',
+        password.trim() || undefined
+      );
       if (success) onClose();
     } else {
-      const success = login(email.trim() || 'nepoliancinematicstudio@gmail.com', 'photographer');
+      const success = login(
+        email.trim() || 'nepoliancinematicstudio@gmail.com',
+        'photographer',
+        password.trim() || undefined
+      );
       if (success) onClose();
     }
   };

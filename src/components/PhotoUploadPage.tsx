@@ -139,12 +139,12 @@ export const PhotoUploadPage: React.FC = () => {
 
       try {
         const compressed = await compressAndWatermarkImage(file, {
-          maxWidth: 1400,
-          quality: 0.78,
+          maxWidth: 1200,
+          quality: 0.70,
           watermarkText: applyWatermark
             ? currentUser?.watermarkText || currentUser?.studioName?.toUpperCase() || 'PREVIEW'
             : '',
-          watermarkPosition: currentUser?.watermarkPosition || 'center',
+          watermarkPosition: currentUser?.watermarkPosition || 'bottom-right',
           watermarkOpacity: currentUser?.watermarkOpacity || 0.35,
         });
 

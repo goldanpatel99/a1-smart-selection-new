@@ -17,6 +17,11 @@ import {
   ArrowLeft,
   AlertCircle,
   TrendingUp,
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
+  MessageCircle,
 } from 'lucide-react';
 import { User, AdminSettings } from '../types';
 
@@ -41,8 +46,57 @@ export const AdminPanel: React.FC = () => {
   const [pointsAdjustment, setPointsAdjustment] = useState<number>(5);
   const [adjustmentReason, setAdjustmentReason] = useState<string>('Free Welcome Grant');
 
-  // Reset password display
+  // Reset password & credentials management
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [tempPasswordModal, setTempPasswordModal] = useState<{ user: User; pass: string } | null>(null);
+  const [customPasswordInput, setCustomPasswordInput] = useState<string>('');
+
+  const toggleShowPassword = (userId: string) => {
+    setShowPasswords((prev) => ({ ...prev, [userId]: !prev[userId] }));
+  };
+
+  const copyToClipboard = (text: string, fieldId: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldId);
+    showToast('Copied to clipboard!', 'success');
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const sendCredentialsWhatsApp = (user: User) => {
+    const cleanPhone = (user.phone || '').replace(/[^0-9]/g, '');
+    const pass = user.password || '123456';
+    const message = encodeURIComponent(
+      `Hello ${user.name},\n\nA1 Smart Selection Studio Credentials:\n• Studio: ${user.studioName}\n• Login ID (Email): ${user.email}\n• Password: ${pass}\n\nLogin URL: ${window.location.origin}\nThank you!`
+    );
+    window.open(`https://wa.me/${cleanPhone}?text=${message}`, '_blank');
+  };
+
+  const handleOpenPasswordModal = (user: User) => {
+    const currentPass = user.password || '123456';
+    setCustomPasswordInput(currentPass);
+    setTempPasswordModal({ user, pass: currentPass });
+  };
+
+  const handleSaveCustomPassword = (userId: string) => {
+    if (!customPasswordInput.trim()) {
+      showToast('Password cannot be empty!', 'error');
+      return;
+    }
+    const updatedPass = adminResetPassword(userId, customPasswordInput.trim());
+    if (tempPasswordModal) {
+      setTempPasswordModal({ ...tempPasswordModal, pass: updatedPass });
+    }
+  };
+
+  const handleGenerateNewPassword = (userId: string) => {
+    const generated = `A1-${Math.floor(100000 + Math.random() * 900000)}`;
+    setCustomPasswordInput(generated);
+    const updatedPass = adminResetPassword(userId, generated);
+    if (tempPasswordModal) {
+      setTempPasswordModal({ ...tempPasswordModal, pass: updatedPass });
+    }
+  };
 
   // Editable pricing settings
   const [settingsForm, setSettingsForm] = useState<AdminSettings>(() => ({
@@ -226,76 +280,143 @@ export const AdminPanel: React.FC = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-neutral-800 text-neutral-400 uppercase text-[10px] tracking-wider">
-                  <th className="pb-3">Photographer / Studio</th>
-                  <th className="pb-3">Email & Contact</th>
-                  <th className="pb-3 text-center">Events</th>
-                  <th className="pb-3 text-center">Points Balance</th>
-                  <th className="pb-3">Joined Date</th>
-                  <th className="pb-3 text-right">Admin Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-800/60 text-neutral-300">
-                {photographers.map((user) => {
-                  const userEventsCount = events.filter((e) => e.photographerId === user.id).length;
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-neutral-800 text-neutral-400 uppercase text-[10px] tracking-wider">
+                    <th className="pb-3">Photographer / Studio</th>
+                    <th className="pb-3">Login ID & Password (Credentials)</th>
+                    <th className="pb-3">Contact (Phone)</th>
+                    <th className="pb-3 text-center">Events</th>
+                    <th className="pb-3 text-center">Points Balance</th>
+                    <th className="pb-3">Joined Date</th>
+                    <th className="pb-3 text-right">Admin Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800/60 text-neutral-300">
+                  {photographers.map((user) => {
+                    const userEventsCount = events.filter((e) => e.photographerId === user.id).length;
 
-                  return (
-                    <tr key={user.id} className="hover:bg-neutral-800/40 transition-colors">
-                      <td className="py-4">
-                        <div className="font-bold text-white text-sm">{user.name}</div>
-                        <div className="text-xs text-amber-400 font-medium">
-                          {user.studioName}
-                        </div>
-                      </td>
-                      <td className="py-4 font-mono text-neutral-400">
-                        <div>{user.email}</div>
-                        <div className="text-[11px] text-neutral-500">{user.phone}</div>
-                      </td>
-                      <td className="py-4 text-center font-mono font-bold text-neutral-200">
-                        {userEventsCount}
-                      </td>
-                      <td className="py-4 text-center">
-                        <span
-                          className={`font-mono font-extrabold text-sm px-2.5 py-1 rounded-full ${
-                            user.points === 0
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          }`}
-                        >
-                          {user.points} pts
-                        </span>
-                      </td>
-                      <td className="py-4 text-neutral-400 font-mono text-[11px]">
-                        {new Date(user.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => setSelectedUserForPoints(user)}
-                            className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold rounded-xl text-xs flex items-center gap-1 transition-colors"
-                          >
-                            <Coins className="w-3.5 h-3.5" />
-                            <span>Add / Edit Points</span>
-                          </button>
+                    return (
+                      <tr key={user.id} className="hover:bg-neutral-800/40 transition-colors">
+                        <td className="py-4">
+                          <div className="font-bold text-white text-sm">{user.name}</div>
+                          <div className="text-xs text-amber-400 font-medium">
+                            {user.studioName}
+                          </div>
+                        </td>
 
-                          <button
-                            onClick={() => handleResetPassword(user)}
-                            className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white rounded-xl text-xs transition-colors"
-                            title="Reset Password"
+                        {/* Login ID & Password (Credentials) */}
+                        <td className="py-4 font-mono">
+                          {/* Login ID */}
+                          <div className="flex items-center gap-1.5 text-xs text-white">
+                            <span className="text-[9px] font-bold text-amber-400 uppercase tracking-wider font-sans bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30">
+                              ID
+                            </span>
+                            <span className="select-all font-mono text-neutral-200">{user.email}</span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(user.email, `id-${user.id}`)}
+                              className="p-1 text-neutral-400 hover:text-white rounded hover:bg-neutral-800 transition-colors"
+                              title="Copy Login ID"
+                            >
+                              {copiedField === `id-${user.id}` ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Password with Eye Toggle & Actions */}
+                          <div className="flex items-center gap-1.5 text-xs mt-1.5">
+                            <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider font-sans bg-neutral-800 px-1.5 py-0.5 rounded border border-neutral-700">
+                              PASS
+                            </span>
+                            <span className="font-mono font-bold text-amber-300 bg-neutral-950 px-2 py-0.5 rounded border border-neutral-800 select-all">
+                              {showPasswords[user.id] ? (user.password || '123456') : '••••••••'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => toggleShowPassword(user.id)}
+                              className="p-1 text-neutral-400 hover:text-white rounded hover:bg-neutral-800 transition-colors"
+                              title={showPasswords[user.id] ? 'Hide Password' : 'Show Password'}
+                            >
+                              {showPasswords[user.id] ? (
+                                <EyeOff className="w-3.5 h-3.5 text-amber-400" />
+                              ) : (
+                                <Eye className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(user.password || '123456', `pass-${user.id}`)}
+                              className="p-1 text-neutral-400 hover:text-white rounded hover:bg-neutral-800 transition-colors"
+                              title="Copy Password"
+                            >
+                              {copiedField === `pass-${user.id}` ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => sendCredentialsWhatsApp(user)}
+                              className="p-1 text-emerald-400 hover:text-emerald-300 rounded hover:bg-emerald-950/40 transition-colors ml-1"
+                              title="Send ID & Password via WhatsApp"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+
+                        <td className="py-4 font-mono text-neutral-400">
+                          <div>{user.phone}</div>
+                        </td>
+                        <td className="py-4 text-center font-mono font-bold text-neutral-200">
+                          {userEventsCount}
+                        </td>
+                        <td className="py-4 text-center">
+                          <span
+                            className={`font-mono font-extrabold text-sm px-2.5 py-1 rounded-full ${
+                              user.points === 0
+                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            }`}
                           >
-                            <Key className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            {user.points} pts
+                          </span>
+                        </td>
+                        <td className="py-4 text-neutral-400 font-mono text-[11px]">
+                          {new Date(user.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => setSelectedUserForPoints(user)}
+                              className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold rounded-xl text-xs flex items-center gap-1 transition-colors"
+                            >
+                              <Coins className="w-3.5 h-3.5" />
+                              <span>Add / Edit Points</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleOpenPasswordModal(user)}
+                              className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white rounded-xl text-xs flex items-center gap-1 font-semibold transition-colors border border-neutral-700"
+                              title="View & Edit Password"
+                            >
+                              <Key className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Reset / Edit Pass</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
         </div>
       )}
 
@@ -642,29 +763,116 @@ export const AdminPanel: React.FC = () => {
         </div>
       )}
 
-      {/* Modal: Password Reset Display */}
+      {/* Modal: View & Edit Photographer Credentials */}
       {tempPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
-          <div className="relative w-full max-w-sm bg-neutral-900 border border-neutral-800 rounded-3xl p-6 text-center shadow-2xl">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto mb-3">
-              <Key className="w-6 h-6" />
+          <div className="relative w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-3xl p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4 pb-3 border-b border-neutral-800">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Photographer Credentials</h3>
+                <p className="text-xs text-neutral-400">
+                  {tempPasswordModal.user.name} ({tempPasswordModal.user.studioName})
+                </p>
+              </div>
             </div>
 
-            <h3 className="text-lg font-bold text-white mb-1">Temporary Password</h3>
-            <p className="text-xs text-neutral-400 mb-4">
-              Generated for {tempPasswordModal.user.name} ({tempPasswordModal.user.email})
-            </p>
-
-            <div className="p-3 bg-neutral-950 rounded-xl border border-neutral-800 font-mono font-bold text-lg text-amber-300 select-all mb-4">
-              {tempPasswordModal.pass}
+            {/* Login ID / Email */}
+            <div className="mb-4">
+              <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                Photographer Login ID (Email)
+              </label>
+              <div className="flex items-center gap-2 p-2.5 bg-neutral-950 rounded-xl border border-neutral-800">
+                <span className="font-mono text-sm text-white flex-1 select-all">
+                  {tempPasswordModal.user.email}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(tempPasswordModal.user.email, 'modal-id')}
+                  className="px-2.5 py-1 bg-neutral-850 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                >
+                  {copiedField === 'modal-id' ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  <span>Copy ID</span>
+                </button>
+              </div>
             </div>
 
-            <button
-              onClick={() => setTempPasswordModal(null)}
-              className="w-full py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs rounded-xl"
-            >
-              Done & Close
-            </button>
+            {/* Password Field */}
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => handleGenerateNewPassword(tempPasswordModal.user.id)}
+                  className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Auto-Generate</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={customPasswordInput}
+                  onChange={(e) => setCustomPasswordInput(e.target.value)}
+                  placeholder="Enter custom password"
+                  className="flex-1 bg-neutral-950 border border-neutral-800 focus:border-amber-500 rounded-xl px-3 py-2.5 font-mono font-bold text-base text-amber-300 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(customPasswordInput, 'modal-pass')}
+                  className="px-3 py-2.5 bg-neutral-850 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors border border-neutral-800"
+                  title="Copy Password"
+                >
+                  {copiedField === 'modal-pass' ? (
+                    <Check className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+              <p className="text-[11px] text-neutral-500 mt-1">
+                Aap manchaha password type kar sakte hain ya Auto-Generate daba sakte hain.
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => handleSaveCustomPassword(tempPasswordModal.user.id)}
+                className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5"
+              >
+                <Save className="w-4 h-4" />
+                <span>Save Password to Cloud Firestore</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => sendCredentialsWhatsApp(tempPasswordModal.user)}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>Send ID & Pass on WhatsApp</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTempPasswordModal(null)}
+                className="w-full py-2 bg-neutral-850 hover:bg-neutral-800 text-neutral-300 font-semibold text-xs rounded-xl transition-colors"
+              >
+                Close Window
+              </button>
+            </div>
           </div>
         </div>
       )}

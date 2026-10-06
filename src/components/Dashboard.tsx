@@ -239,6 +239,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* LEFT PROFILE & STUDIO SIDEBAR PANEL (Permanent / Regular Visibility) */}
         <aside className="lg:col-span-4 xl:col-span-3 space-y-4 lg:sticky lg:top-24">
+          {/* Dashboard Header Button at Top of Left Panel */}
+          <div className="flex items-center gap-2.5 px-4 py-3 bg-neutral-900 border border-amber-500/40 rounded-2xl text-amber-300 font-bold text-sm shadow-lg">
+            <Store className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span className="font-heading tracking-wide">Studio Dashboard</span>
+          </div>
+
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-5 shadow-xl">
             {/* Photographer Identity */}
             <div className="flex items-center gap-3 pb-4 border-b border-neutral-800">
@@ -275,24 +281,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
 
-            {/* Points Balance Widget */}
-            <div className="mt-4 p-3.5 bg-neutral-950 rounded-2xl border border-neutral-800">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] font-semibold text-neutral-400">Available Points</span>
-                <span className="text-[10px] bg-amber-500/15 text-amber-300 font-bold px-2 py-0.5 rounded-full">
-                  1 Pt = 1 Event
-                </span>
-              </div>
-              <div className="text-2xl font-extrabold font-mono text-amber-400 my-1">
-                {currentUser?.points || 0} Points
-              </div>
+            {/* Primary Action: Create New Event (Only single place) */}
+            <div className="mt-4 pt-1">
               <button
                 type="button"
-                onClick={onOpenBuyPoints}
-                className="w-full mt-2.5 py-2 px-3 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+                onClick={onOpenCreateEvent}
+                className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-neutral-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5 hover:scale-[1.02]"
               >
-                <Coins className="w-3.5 h-3.5" />
-                <span>Recharge Points (UPI)</span>
+                <Plus className="w-4 h-4 stroke-[3]" />
+                <span>Create New Event (1 Pt)</span>
               </button>
             </div>
 
@@ -323,8 +320,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-neutral-400">Position:</span>
-                  <span className="capitalize text-neutral-200">
-                    {currentUser?.watermarkPosition || 'center'}
+                  <span className="capitalize text-neutral-200 font-medium">
+                    {currentUser?.watermarkPosition || 'bottom-right'}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -336,17 +333,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
 
-            {/* Quick Actions */}
+            {/* Settings & Logout Actions */}
             <div className="mt-4 pt-4 border-t border-neutral-800 space-y-2">
-              <button
-                type="button"
-                onClick={onOpenCreateEvent}
-                className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-neutral-950 font-bold text-xs rounded-xl shadow transition-all flex items-center justify-center gap-1.5"
-              >
-                <Plus className="w-4 h-4 stroke-[3]" />
-                <span>Create New Event (1 Pt)</span>
-              </button>
-
               {onOpenSettings && (
                 <button
                   type="button"
@@ -357,16 +345,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <span>Studio & Watermark Settings</span>
                 </button>
               )}
-
-              <a
-                href="https://wa.me/917970641503?text=Namaste%20Goldan%20ji,%20mujhe%20A1%20Smart%20Selection%20ke%20bare%20mein%20sahayata%20chahiye."
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-2 px-3 bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/30 text-emerald-300 font-semibold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5"
-              >
-                <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
-                <span>WhatsApp Help Desk</span>
-              </a>
 
               <button
                 type="button"
@@ -382,36 +360,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* RIGHT MAIN CONTENT AREA */}
         <section className="lg:col-span-8 xl:col-span-9 space-y-6">
-          {/* Top Title & CTA Row */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-neutral-800">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs uppercase tracking-wider font-semibold text-neutral-400">
-                  Studio Events & Client Selections
-                </span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold font-heading text-white">
-                {currentUser?.studioName || 'My Studio'}
-              </h1>
+          {/* Top Title */}
+          <div className="pb-4 border-b border-neutral-800">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs uppercase tracking-wider font-semibold text-neutral-400">
+                Studio Events & Client Selections
+              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
             </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={onOpenBuyPoints}
-                className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-amber-500/40 text-amber-300 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 shadow-sm hover:scale-105"
-              >
-                <Coins className="w-4 h-4 text-amber-400" />
-                <span>Recharge Points</span>
-              </button>
-              <button
-                onClick={onOpenCreateEvent}
-                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-neutral-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-1.5 hover:scale-105"
-              >
-                <Plus className="w-4 h-4 stroke-[3]" />
-                <span>New Event (1 Pt)</span>
-              </button>
-            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold font-heading text-white">
+              {currentUser?.studioName || 'My Studio'}
+            </h1>
           </div>
 
           {/* 50-Day Cloud Storage Notice Line (Visible Only For Photographers) */}
@@ -422,12 +381,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
 
-      {/* Clean 3-Card Stats Grid (Client Selected card removed as requested) */}
+      {/* Clean 3-Card Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        {/* Points Card */}
+        {/* Points Card - ONLY place showing points balance & Add button */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-neutral-400 text-xs">
-            <span className="font-semibold">Points Balance</span>
+            <span className="font-semibold">Available Points</span>
             <Coins className="w-4 h-4 text-amber-400" />
           </div>
           <div className="my-3">
@@ -442,9 +401,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <button
             onClick={onOpenBuyPoints}
-            className="text-xs text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1"
+            className="w-full py-2 px-3 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-neutral-950 font-bold text-xs rounded-xl shadow transition-all flex items-center justify-center gap-1.5"
           >
-            + Recharge Points
+            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+            <span>Add Points</span>
           </button>
         </div>
 
@@ -544,8 +504,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {filteredEvents.map((event) => {
-                const selectedCount = event.photos.filter((p) => p.isSelected).length;
-                const totalPhotos = event.photos.length;
+                const selectedCount = event.selectedCount ?? event.photos.filter((p) => p.isSelected).length;
+                const totalPhotos = event.photosCount ?? event.photos.length;
                 const isCopied = copiedEventId === event.id;
                 const timeLeftInfo = getEventTimeLeft(event.deadlineDate, event.status);
 
@@ -719,7 +679,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           className="py-2 px-2 bg-neutral-850 hover:bg-neutral-800 border border-neutral-800 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
                         >
                           <Upload className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Photos ({event.photos.length})</span>
+                          <span>Photos ({totalPhotos})</span>
                         </button>
 
                         {/* Results & .BAT Download */}
@@ -732,21 +692,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </button>
                       </div>
 
-                      {/* Sub-actions: 6 Days extension & Delete */}
-                      <div className="flex items-center justify-between text-[11px] text-neutral-500 pt-1">
+                      {/* Sub-actions: 6 Days extension button & Delete */}
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-800/80">
                         <button
+                          type="button"
                           onClick={() => handleExtend(event.id)}
-                          className="hover:text-amber-400 flex items-center gap-1 font-semibold text-neutral-400"
+                          className="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 hover:scale-[1.02] shadow-sm"
+                          title="Extend Deadline by +6 Days (Costs 1 Point)"
                         >
-                          +6 Days Deadline ({adminSettings.pointsPerExtension || 1} {adminSettings.pointsPerExtension === 1 ? 'Pt' : 'Pts'})
+                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>+6 Days Extend (1 Pt)</span>
                         </button>
 
                         <button
+                          type="button"
                           onClick={() => handleDelete(event.id, event.title)}
-                          className="hover:text-rose-400 flex items-center gap-1"
+                          className="text-neutral-500 hover:text-rose-400 text-xs flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-rose-950/20"
                         >
-                          <Trash2 className="w-3 h-3" />
-                          Delete Event
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
                         </button>
                       </div>
                     </div>
@@ -765,12 +729,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-base font-bold text-white font-heading">
               Points Ledger & History
             </h3>
-            <button
-              onClick={onOpenBuyPoints}
-              className="px-3.5 py-1.5 bg-amber-500/20 border border-amber-500/30 text-amber-300 rounded-xl text-xs font-bold hover:bg-amber-500/30"
-            >
-              + Buy More Points
-            </button>
           </div>
 
           {myTransactions.length === 0 ? (
@@ -830,43 +788,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
         </div>
       )}
-
-      {/* Studio Support & Association Footer Card */}
-      <div className="mt-12 p-6 rounded-3xl bg-neutral-900/60 border border-neutral-800 text-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-heading font-extrabold text-white text-sm">
-              NEPOLIAN CINEMATIC STUDIO
-            </span>
-            <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-              Est: From 2018 (Trusted Payment)
-            </span>
-          </div>
-          <p className="text-neutral-400 text-xs">
-            Pro Founder: <strong className="text-amber-400">Goldan Patel</strong> • Email:{' '}
-            <a href="mailto:nepoliancinematicstudio@gmail.com" className="text-neutral-300 hover:text-white">
-              nepoliancinematicstudio@gmail.com
-            </a>
-          </p>
-          <div className="flex flex-wrap items-center gap-2 mt-2 text-[11px] text-neutral-500">
-            <span>Our Brands:</span>
-            <span className="text-neutral-400">NCS Studio</span> •
-            <span className="text-neutral-400">A1 Flip Book</span> •
-            <span className="text-neutral-400">A1 Designing Agency</span> •
-            <span className="text-amber-400 font-semibold">A1 Smart Selection</span>
-          </div>
-        </div>
-
-        <a
-          href="https://wa.me/917970641503?text=Namaste%20Goldan%20ji,%20mujhe%20A1%20Smart%20Selection%20ke%20bare%20mein%20sahayata%20chahiye."
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 transition-all hover:scale-105"
-        >
-          <MessageCircle className="w-4 h-4 fill-white" />
-          <span>WhatsApp Help Desk</span>
-        </a>
-      </div>
     </section>
   </div>
 

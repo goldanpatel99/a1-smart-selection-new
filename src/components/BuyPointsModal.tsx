@@ -6,14 +6,18 @@ import {
   Coins,
   Zap,
   ShieldCheck,
-  QrCode,
-  Copy,
   Sparkles,
   MessageCircle,
-  Clock,
   AlertCircle,
-  ExternalLink,
+  CreditCard,
+  CheckCircle2,
+  Lock,
+  ArrowRight,
+  RefreshCw,
+  HelpCircle,
+  RotateCcw,
 } from 'lucide-react';
+import { razorpayService } from '../services/razorpayService';
 
 interface BuyPointsModalProps {
   isOpen: boolean;
@@ -21,9 +25,16 @@ interface BuyPointsModalProps {
 }
 
 export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({ isOpen, onClose }) => {
-  const { currentUser, adminSettings, showToast } = useApp();
+  const { currentUser, adminSettings, buyPoints, showToast } = useApp();
   const [selectedPackageId, setSelectedPackageId] = useState<string>('pkg-20');
-  const [copiedUpi, setCopiedUpi] = useState(false);
+  const [isProcessingRazorpay, setIsProcessingRazorpay] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [successReceipt, setSuccessReceipt] = useState<{
+    points: number;
+    amount: number;
+    paymentId: string;
+    packageName: string;
+  } | null>(null);
 
   if (!isOpen) return null;
 
@@ -36,316 +47,419 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({ isOpen, onClose 
     (adminSettings.pricingPackages[0]?.priceRupees / adminSettings.pricingPackages[0]?.points) ||
     110;
 
-  const UPI_ID = '7970641503@kotakbank';
-  const PAYEE_NAME = 'Laily Patel';
-
-  // UPI deep link
-  const upiDeepLink = `upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(
-    PAYEE_NAME
-  )}&am=${selectedPackage.priceRupees}&cu=INR&tn=${encodeURIComponent(
-    `A1 Points ${selectedPackage.points} - ${currentUser?.studioName || 'Studio'}`
-  )}`;
-
-  // Dynamic QR Code generation URL
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(
-    upiDeepLink
-  )}`;
-
-  // WhatsApp Pre-filled message for sending payment screenshot
-  const whatsAppText = encodeURIComponent(
-    `Namaste Goldan ji! Maine A1 Smart Selection ke liye payment kar diya hai:\n\n` +
-      `• Studio Name: ${currentUser?.studioName || 'Studio'}\n` +
-      `• Photographer Name: ${currentUser?.name || 'Photographer'}\n` +
-      `• Registered Email: ${currentUser?.email || ''}\n` +
-      `• Package: ${selectedPackage.name} (${selectedPackage.points} Points)\n` +
-      `• Amount Paid: ₹${selectedPackage.priceRupees}\n` +
-      `• Paid To UPI: ${UPI_ID}\n\n` +
-      `Maine payment ka screenshot attach kar diya hai. Kripya verification karke mere account mein ${selectedPackage.points} points add kar dijiye.`
-  );
-
-  const whatsAppUrl = `https://wa.me/917970641503?text=${whatsAppText}`;
-
-  const handleCopyUpi = () => {
-    navigator.clipboard.writeText(UPI_ID);
-    setCopiedUpi(true);
-    showToast('UPI ID copied to clipboard: 7970641503@kotakbank', 'success');
-    setTimeout(() => setCopiedUpi(false), 2500);
+  // WhatsApp Support deep-link for payment issue / assistance
+  const generateSupportWhatsAppUrl = (issueDetail?: string) => {
+    const text = encodeURIComponent(
+      `Namaste Goldan ji! Mujhe A1 Smart Selection points purchase karne mein assistance chahiye:\n\n` +
+        `• Studio: ${currentUser?.studioName || 'Studio'}\n` +
+        `• Photographer: ${currentUser?.name || 'Photographer'}\n` +
+        `• Registered Email: ${currentUser?.email || ''}\n` +
+        `• Phone: ${currentUser?.phone || ''}\n` +
+        `• Selected Package: ${selectedPackage.name} (${selectedPackage.points} Points - ₹${selectedPackage.priceRupees})\n` +
+        (issueDetail ? `• Issue / Error: ${issueDetail}\n\n` : `\n`) +
+        `Kripya meri help karein.`
+    );
+    return `https://wa.me/917970641503?text=${text}`;
   };
 
-  const handleDoneWithScreenshot = () => {
-    showToast(
-      'Dhanyawad! Help Desk par screenshot aate hi 5-10 minute mein admin points credit kar denge.',
-      'success'
-    );
+  /**
+   * 100% Automated 1-Click Razorpay Checkout
+   */
+  const handleRazorpayPay = async () => {
+    if (!currentUser) {
+      showToast('Please login to buy points', 'error');
+      return;
+    }
+
+    setIsProcessingRazorpay(true);
+    setPaymentError(null);
+
+    try {
+      await razorpayService.startCheckout({
+        amountRupees: selectedPackage.priceRupees,
+        points: selectedPackage.points,
+        packageName: selectedPackage.name,
+        packageId: selectedPackage.id,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userEmail: currentUser.email,
+        userPhone: currentUser.phone,
+        studioName: currentUser.studioName || 'NEPOLIAN CINEMATIC STUDIO',
+        onSuccess: async (paymentId, orderId) => {
+          setIsProcessingRazorpay(false);
+          setPaymentError(null);
+          // Credit points instantly in state and Cloud Firestore
+          await buyPoints(selectedPackage.id, 'Razorpay', { paymentId, orderId });
+          setSuccessReceipt({
+            points: selectedPackage.points,
+            amount: selectedPackage.priceRupees,
+            paymentId,
+            packageName: selectedPackage.name,
+          });
+        },
+        onError: (errMsg) => {
+          setIsProcessingRazorpay(false);
+          setPaymentError(errMsg);
+          showToast(errMsg, 'error');
+        },
+      });
+    } catch (err: any) {
+      setIsProcessingRazorpay(false);
+      const errMsg = err?.message || 'Payment initiation failed. Please try again.';
+      setPaymentError(errMsg);
+      showToast(errMsg, 'error');
+    }
+  };
+
+  const handleClose = () => {
+    setSuccessReceipt(null);
+    setPaymentError(null);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
-      <div className="relative w-full max-w-2xl bg-neutral-900 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
+      <div className="relative w-full max-w-2xl bg-neutral-900 border border-neutral-800 rounded-3xl p-5 sm:p-8 shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
         {/* Ambient Glow */}
         <div className="absolute top-0 right-1/4 w-72 h-72 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <button
-          onClick={onClose}
-          className="absolute top-5 right-5 text-neutral-400 hover:text-white p-2 rounded-xl hover:bg-neutral-800 transition-colors"
+          onClick={handleClose}
+          className="absolute top-5 right-5 text-neutral-400 hover:text-white p-2 rounded-xl hover:bg-neutral-800 transition-colors z-20"
         >
           <X className="w-5 h-5" />
         </button>
 
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-            <Coins className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold font-heading text-white">
-              Buy Points for Your Studio
+        {/* 1. SUCCESS RECEIPT SCREEN */}
+        {successReceipt ? (
+          <div className="text-center py-6 animate-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/20">
+              <CheckCircle2 className="w-10 h-10" />
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold uppercase tracking-wider mb-2">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Payment Verified & Points Credited Instantly</span>
+            </div>
+
+            <h2 className="text-3xl font-extrabold text-white font-heading">
+              +{successReceipt.points} Points Added!
             </h2>
-            <p className="text-xs text-neutral-400">
-              Points se naye events banayein aur selection deadlines extend karein.
+            <p className="text-xs text-neutral-300 mt-1 max-w-md mx-auto">
+              Aapka payment successfully complete ho gaya hai. Studio account balance mein{' '}
+              <strong className="text-amber-400">{successReceipt.points} points</strong> live credit ho chuke hain.
             </p>
-          </div>
-        </div>
 
-        {/* Current Balance Bar */}
-        <div className="my-5 p-3.5 bg-neutral-950/80 rounded-2xl border border-neutral-800 flex items-center justify-between">
-          <div className="text-xs text-neutral-400">
-            Current Studio Balance for{' '}
-            <span className="font-semibold text-white">
-              {currentUser?.studioName || 'Your Studio'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span
-              className={`text-lg font-mono font-extrabold ${
-                (currentUser?.points || 0) === 0 ? 'text-rose-400' : 'text-amber-400'
-              }`}
+            {/* Receipt Summary Card */}
+            <div className="my-6 p-4 bg-neutral-950/80 rounded-2xl border border-neutral-800 max-w-md mx-auto text-left text-xs space-y-2.5">
+              <div className="flex justify-between py-1 border-b border-neutral-900">
+                <span className="text-neutral-400">Package:</span>
+                <span className="font-bold text-white">{successReceipt.packageName}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-neutral-900">
+                <span className="text-neutral-400">Amount Paid:</span>
+                <span className="font-bold text-emerald-400 font-mono text-sm">
+                  ₹{successReceipt.amount.toLocaleString('en-IN')}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-neutral-900">
+                <span className="text-neutral-400">Payment Gateway:</span>
+                <span className="font-bold text-amber-300">Razorpay (Live 256-bit SSL)</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-neutral-900">
+                <span className="text-neutral-400">Transaction ID:</span>
+                <span className="font-mono text-neutral-300 text-[11px] truncate max-w-[200px]">
+                  {successReceipt.paymentId}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 pt-2 text-sm">
+                <span className="font-bold text-neutral-300">New Studio Balance:</span>
+                <span className="font-bold text-amber-400 font-mono text-base">
+                  {currentUser?.points || 0} Points
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleClose}
+              className="py-3.5 px-8 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-neutral-950 font-extrabold text-sm rounded-2xl shadow-xl shadow-amber-500/20 transition-all hover:scale-105"
             >
-              {currentUser?.points || 0} Points
-            </span>
-            {(currentUser?.points || 0) === 0 && (
-              <span className="text-[11px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-full font-medium">
-                0 Balance
-              </span>
-            )}
+              Continue & Create Events
+            </button>
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                <Coins className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold font-heading text-white">
+                  Buy Points for Your Studio
+                </h2>
+                <p className="text-xs text-neutral-400">
+                  Instant credit via Razorpay. UPI, Cards & NetBanking supported.
+                </p>
+              </div>
+            </div>
 
-        {/* Step 1: Package Options */}
-        <div className="mb-2">
-          <div className="text-xs font-semibold text-neutral-300 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px] font-bold">
-              1
-            </span>
-            <span>Select Points Package</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-6">
-            {adminSettings.pricingPackages.map((pkg) => {
-              const isSelected = selectedPackageId === pkg.id;
-              const perEventCost = Math.round(pkg.priceRupees / Math.max(1, pkg.points));
-              const autoSavings = Math.max(0, baseRatePerPoint * pkg.points - pkg.priceRupees);
-
-              return (
-                <div
-                  key={pkg.id}
-                  onClick={() => setSelectedPackageId(pkg.id)}
-                  className={`relative p-5 rounded-2xl border cursor-pointer transition-all duration-200 flex flex-col justify-between ${
-                    isSelected
-                      ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 shadow-lg shadow-amber-500/10 scale-[1.02]'
-                      : 'bg-neutral-950/60 border-neutral-800 hover:border-neutral-700'
+            {/* Current Balance Bar */}
+            <div className="my-4 p-3.5 bg-neutral-950/80 rounded-2xl border border-neutral-800 flex items-center justify-between">
+              <div className="text-xs text-neutral-400">
+                Current Studio Balance for{' '}
+                <span className="font-semibold text-white">
+                  {currentUser?.studioName || 'Your Studio'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-lg font-mono font-extrabold ${
+                    (currentUser?.points || 0) === 0 ? 'text-rose-400' : 'text-amber-400'
                   }`}
                 >
-                  {pkg.isPopular ? (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full shadow">
-                      {pkg.savingsText || (autoSavings > 0 ? `Save ₹${autoSavings} 🔥` : 'Best Value 🔥')}
-                    </div>
-                  ) : autoSavings > 0 ? (
-                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-neutral-800 text-emerald-400 border border-emerald-500/30 text-[9px] font-bold px-2 py-0.5 rounded-full shadow">
-                      Save ₹{autoSavings}
-                    </div>
-                  ) : null}
+                  {currentUser?.points || 0} Points
+                </span>
+                {(currentUser?.points || 0) === 0 && (
+                  <span className="text-[11px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-full font-medium">
+                    0 Balance
+                  </span>
+                )}
+              </div>
+            </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-neutral-400">{pkg.name}</span>
-                      <div
-                        className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                          isSelected
-                            ? 'border-amber-400 bg-amber-400 text-neutral-950'
-                            : 'border-neutral-700'
-                        }`}
-                      >
-                        {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+            {/* Package Selection */}
+            <div className="mb-4">
+              <div className="text-xs font-semibold text-neutral-300 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px] font-bold">
+                    1
+                  </span>
+                  <span>Select Points Package</span>
+                </div>
+                <span className="text-[10px] text-amber-400/90 font-mono">
+                  1 Point = 1 Event
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                {adminSettings.pricingPackages.map((pkg) => {
+                  const isSelected = selectedPackageId === pkg.id;
+                  const perEventCost = Math.round(pkg.priceRupees / Math.max(1, pkg.points));
+                  const autoSavings = Math.max(0, baseRatePerPoint * pkg.points - pkg.priceRupees);
+
+                  return (
+                    <div
+                      key={pkg.id}
+                      onClick={() => {
+                        setSelectedPackageId(pkg.id);
+                        setPaymentError(null);
+                      }}
+                      className={`relative p-4 rounded-2xl border cursor-pointer transition-all duration-200 flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 shadow-lg shadow-amber-500/10 scale-[1.02]'
+                          : 'bg-neutral-950/60 border-neutral-800 hover:border-neutral-700'
+                      }`}
+                    >
+                      {pkg.isPopular ? (
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full shadow">
+                          {pkg.savingsText || (autoSavings > 0 ? `Save ₹${autoSavings} 🔥` : 'Best Value 🔥')}
+                        </div>
+                      ) : autoSavings > 0 ? (
+                        <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-neutral-800 text-emerald-400 border border-emerald-500/30 text-[9px] font-bold px-2 py-0.5 rounded-full shadow">
+                          Save ₹{autoSavings}
+                        </div>
+                      ) : null}
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-semibold text-neutral-400">{pkg.name}</span>
+                          <div
+                            className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                              isSelected
+                                ? 'border-amber-400 bg-amber-400 text-neutral-950'
+                                : 'border-neutral-700'
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+                        </div>
+
+                        <div className="flex items-baseline gap-2 my-1">
+                          <span className="text-2xl sm:text-3xl font-extrabold text-white">
+                            ₹{pkg.priceRupees.toLocaleString('en-IN')}
+                          </span>
+                          <span className="text-[11px] text-emerald-400 font-mono font-bold">
+                            (₹{perEventCost}/evt)
+                          </span>
+                        </div>
+
+                        <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5 mb-1.5">
+                          <Zap className="w-3.5 h-3.5" />
+                          {pkg.points} {pkg.points === 1 ? 'Point' : 'Points'}
+                          {autoSavings > 0 && (
+                            <span className="text-[10px] text-neutral-400 font-normal">
+                              • Save ₹{autoSavings}
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-[11px] text-neutral-400 leading-snug">{pkg.tagline}</p>
+                      </div>
+
+                      <div className="mt-3 pt-2.5 border-t border-neutral-800/80 text-[10px] text-neutral-500">
+                        {adminSettings.pointsPerEvent || 1} Point = 1 Wedding Event
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            </div>
 
-                    <div className="flex items-baseline gap-2 my-1">
-                      <span className="text-3xl font-extrabold text-white">
-                        ₹{pkg.priceRupees.toLocaleString('en-IN')}
-                      </span>
-                      <span className="text-[11px] text-emerald-400 font-mono font-bold">
-                        (₹{perEventCost}/event)
-                      </span>
-                    </div>
-
-                    <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5 mb-2">
-                      <Zap className="w-3.5 h-3.5" />
-                      {pkg.points} {pkg.points === 1 ? 'Point' : 'Points'}
-                      {autoSavings > 0 && (
-                        <span className="text-[10px] text-neutral-400 font-normal">
-                          • Save ₹{autoSavings}
-                        </span>
-                      )}
-                    </div>
-
-                    <p className="text-[11px] text-neutral-400 leading-snug">{pkg.tagline}</p>
+            {/* Razorpay Gateway Checkout Box (Clean & Lag-Free) */}
+            <div className="p-5 bg-neutral-950 rounded-2xl border border-amber-500/30 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-extrabold text-white flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-amber-400" />
+                    <span>Razorpay Official Payment Gateway</span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono">
+                      Live
+                    </span>
                   </div>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    UPI (Google Pay, PhonePe, Paytm, CRED), RuPay/Visa Cards & NetBanking
+                  </p>
+                </div>
 
-                  <div className="mt-4 pt-3 border-t border-neutral-800/80 text-[10px] text-neutral-500">
-                    {adminSettings.pointsPerEvent || 1} Point = 1 Wedding Event
+                <div className="text-right">
+                  <div className="text-[11px] text-neutral-400">Total Payable:</div>
+                  <div className="text-2xl font-extrabold text-amber-400 font-mono">
+                    ₹{selectedPackage.priceRupees.toLocaleString('en-IN')}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Step 2: Official UPI Payment & Verification Section */}
-        <div className="p-5 bg-neutral-950 rounded-2xl border border-neutral-800 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px] font-bold">
-                2
-              </span>
-              <span>Official UPI Payment & Verification</span>
-            </div>
-            <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 font-medium">
-              Direct UPI Mode
-            </span>
-          </div>
-
-          {/* Gateway Notice Box */}
-          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl mb-5 flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-amber-200/90 leading-relaxed">
-              <strong>Notice:</strong> Online card/netbanking gateway verification process mein hai.
-              Kripya niche diye gaye official <strong>Kotak Bank UPI ID</strong> ya <strong>QR Code</strong> par payment karke WhatsApp screenshot share karein. Admin verification ke baad <strong>5–10 minute mein</strong> points aapke balance mein add kar denge.
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-center">
-            {/* Left: Dynamic QR Code Box */}
-            <div className="flex flex-col items-center justify-center p-4 bg-neutral-900/90 border border-neutral-800 rounded-2xl text-center">
-              <div className="bg-white p-2.5 rounded-xl shadow-lg mb-3">
-                <img
-                  src={qrCodeUrl}
-                  alt={`UPI QR Code for ₹${selectedPackage.priceRupees}`}
-                  className="w-44 h-44 object-contain"
-                />
               </div>
-              <div className="text-xs font-extrabold text-white">
-                Scan to Pay ₹{selectedPackage.priceRupees.toLocaleString('en-IN')}
-              </div>
-              <p className="text-[10px] text-neutral-400 mt-1">
-                Any UPI App (GPay • PhonePe • Paytm • BHIM • CRED)
-              </p>
-            </div>
 
-            {/* Right: UPI Details & Copy */}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[11px] text-neutral-400 mb-1">
-                  Official Studio UPI ID
-                </label>
+              {/* Supported Payment Channels */}
+              <div className="p-3 bg-neutral-900/90 rounded-xl border border-neutral-800 flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-300">
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 bg-neutral-900 border border-neutral-700/80 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-amber-300 truncate">
-                    {UPI_ID}
+                  <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>256-Bit SSL Encrypted Instant Checkout</span>
+                </div>
+                <div className="flex items-center gap-2.5 text-neutral-400 font-mono text-[10px]">
+                  <span className="text-neutral-200">GPay</span>
+                  <span>•</span>
+                  <span className="text-neutral-200">PhonePe</span>
+                  <span>•</span>
+                  <span className="text-neutral-200">Paytm</span>
+                  <span>•</span>
+                  <span className="text-neutral-200">CRED</span>
+                  <span>•</span>
+                  <span className="text-neutral-200">Cards</span>
+                  <span>•</span>
+                  <span className="text-neutral-200">NetBanking</span>
+                </div>
+              </div>
+
+              {/* Main 1-Click Pay Button */}
+              <button
+                type="button"
+                disabled={isProcessingRazorpay}
+                onClick={handleRazorpayPay}
+                className="w-full py-4 px-6 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-neutral-950 font-extrabold text-sm sm:text-base rounded-2xl shadow-xl shadow-amber-500/25 transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed group"
+              >
+                {isProcessingRazorpay ? (
+                  <>
+                    <RefreshCw className="w-5 h-5 animate-spin text-neutral-950" />
+                    <span>Opening Razorpay Secure Window...</span>
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="w-5 h-5" />
+                    <span>
+                      Pay ₹{selectedPackage.priceRupees.toLocaleString('en-IN')} with Razorpay
+                    </span>
+                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                  </>
+                )}
+              </button>
+
+              <div className="flex items-center justify-center gap-1.5 text-[10px] text-neutral-400">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Zero lag • Payment complete hote hi points turant aapke account mein jud jayenge.</span>
+              </div>
+            </div>
+
+            {/* Payment Issue / Failure Banner & WhatsApp Support */}
+            {paymentError ? (
+              <div className="mt-4 p-4 bg-rose-950/40 border border-rose-500/40 rounded-2xl animate-in fade-in space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-bold text-rose-200">
+                      Payment Issue / Transaction Interrupted
+                    </h4>
+                    <p className="text-[11px] text-rose-300/90 mt-0.5">
+                      {paymentError}
+                    </p>
+                    <p className="text-[11px] text-neutral-300 mt-1">
+                      Agar aapke bank se paise kat gaye hain aur points nahi jude, ya payment mein koi technical issue aa raha hai, toh turant niche diye gaye button se <strong>WhatsApp par contact karein</strong>. Hamari team turant check karke points add kar degi.
+                    </p>
                   </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                  <a
+                    href={generateSupportWhatsAppUrl(paymentError)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all"
+                  >
+                    <MessageCircle className="w-4 h-4 fill-white" />
+                    <span>Contact on WhatsApp (+91 7970641503)</span>
+                  </a>
+
                   <button
                     type="button"
-                    onClick={handleCopyUpi}
-                    className="px-3.5 py-2.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors flex-shrink-0"
+                    onClick={handleRazorpayPay}
+                    className="w-full sm:w-auto py-2.5 px-4 bg-neutral-800 hover:bg-neutral-700 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors"
                   >
-                    {copiedUpi ? (
-                      <>
-                        <Check className="w-4 h-4 text-emerald-400" />
-                        <span className="text-emerald-400">Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        <span>Copy</span>
-                      </>
-                    )}
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Retry Payment</span>
                   </button>
                 </div>
               </div>
-
-              <div>
-                <label className="block text-[11px] text-neutral-400 mb-1">Payee Name</label>
-                <div className="bg-neutral-900/70 border border-neutral-800 rounded-xl px-3.5 py-2 text-xs font-semibold text-neutral-200">
-                  {PAYEE_NAME}
+            ) : (
+              /* Dedicated Help / WhatsApp Card (Always Visible) */
+              <div className="mt-4 p-3.5 bg-neutral-950/80 rounded-2xl border border-neutral-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 flex-shrink-0">
+                    <MessageCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-white text-[11px]">
+                      Payment mein koi issue ya transaction fail ho gaya?
+                    </div>
+                    <div className="text-[10px] text-neutral-400 mt-0.5">
+                      Agar bank se amount deduct ho gaya ho ya error aaye, WhatsApp par turant help lein:
+                    </div>
+                  </div>
                 </div>
+
+                <a
+                  href={generateSupportWhatsAppUrl()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md transition-all hover:scale-105"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 fill-white" />
+                  <span>Contact on WhatsApp</span>
+                </a>
               </div>
-
-              <div className="p-3 bg-neutral-900/80 border border-neutral-800/80 rounded-xl space-y-1.5 text-[11px] text-neutral-300">
-                <div className="flex items-center gap-1.5 text-amber-400 font-semibold">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>Fast Verification Workflow:</span>
-                </div>
-                <div>1. UPI App se ₹{selectedPackage.priceRupees} pay karein.</div>
-                <div>2. Successful payment ka screenshot lein.</div>
-                <div>3. Niche button par click karke WhatsApp par share karein.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Step 3: WhatsApp Action CTAs */}
-        <div className="space-y-3">
-          <a
-            href={whatsAppUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full py-4 px-6 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-extrabold text-sm sm:text-base rounded-2xl shadow-xl shadow-emerald-600/25 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2.5"
-          >
-            <MessageCircle className="w-5 h-5 fill-white" />
-            <span>Send Payment Screenshot on WhatsApp (Help Desk)</span>
-            <ExternalLink className="w-4 h-4 ml-1 opacity-80" />
-          </a>
-
-          <button
-            type="button"
-            onClick={handleDoneWithScreenshot}
-            className="w-full py-2.5 px-4 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs font-semibold rounded-xl transition-colors"
-          >
-            I Have Sent The Screenshot (Done)
-          </button>
-        </div>
-
-        {/* Business Trust & Customer Support */}
-        <div className="mt-5 p-3.5 bg-neutral-950/90 rounded-2xl border border-neutral-800 text-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-1.5 font-semibold text-neutral-200 text-[11px]">
-              <span className="text-emerald-400">✓ Est. From 2018 (Verified Studio Payment)</span>
-              <span>• NEPOLIAN CINEMATIC STUDIO</span>
-            </div>
-            <div className="text-[10px] text-neutral-400 mt-0.5">
-              Founder: <strong className="text-amber-400">Goldan Patel</strong> • Support: nepoliancinematicstudio@gmail.com
-            </div>
-          </div>
-          <a
-            href="https://wa.me/917970641503?text=Namaste%20Goldan%20ji,%20mujhe%20points%20recharge%20ke%20bare%20mein%20sahayata%20chahiye."
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950 border border-emerald-500/40 text-emerald-300 hover:text-white rounded-xl text-xs font-semibold transition-colors"
-          >
-            <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Help Desk</span>
-          </a>
-        </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

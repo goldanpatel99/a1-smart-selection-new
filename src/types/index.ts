@@ -40,8 +40,16 @@ export interface WeddingEvent {
   clientNotes?: string;
   coverPhotoUrl?: string;
   photosPerSheet?: number; // default: 6 photos = 1 sheet (1 page)
+  photosCount?: number;
+  selectedCount?: number;
   storageCleanedAt?: string; // timestamp when preview storage was purged after 50 days
   isStoragePurged?: boolean; // true if preview photos were purged for storage saving
+  coupleStory?: string; // romantic story/quote for hero welcome screen
+  studioLogoUrl?: string;
+  studioPhone?: string;
+  studioInstagram?: string;
+  studioAddress?: string;
+  studioTagline?: string;
 }
 
 export interface User {
@@ -49,6 +57,7 @@ export interface User {
   name: string;
   email: string;
   phone: string;
+  password?: string;
   studioName: string;
   role: 'photographer' | 'admin';
   points: number; // starts at 0 for new photographers
@@ -57,6 +66,14 @@ export interface User {
   watermarkPosition?: 'center' | 'bottom-right' | 'bottom-left' | 'top-right';
   watermarkOpacity?: number;
   defaultPhotosPerSheet?: number; // default: 6
+  // 100% White-Label Studio Branding
+  studioLogoUrl?: string;
+  studioTagline?: string;
+  studioAddress?: string;
+  studioInstagram?: string;
+  studioWebsite?: string;
+  studioBookingPhone?: string;
+  enableAntiScreenshot?: boolean;
 }
 
 export interface PointTransaction {

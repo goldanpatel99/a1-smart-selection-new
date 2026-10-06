@@ -30,11 +30,21 @@ service cloud.firestore {
       // Clients need public read access to view their gallery via unique link
       allow read: if true;
       // Photographers create their events
-      allow create: if isAuthenticated() || true;
+      allow create: if true;
       // Clients submit photo selections / hearts, and photographers edit details
       allow update: if true;
       // Only event owner or admin can delete
-      allow delete: if isAuthenticated() || isAdmin() || true;
+      allow delete: if true;
+
+      // Event Photos Subcollection (Photos stored per document)
+      match /photos/{photoId} {
+        allow read: if true;
+        allow write: if true;
+      }
+
+      match /{allChildren=**} {
+        allow read, write: if true;
+      }
     }
 
     // Transactions Collection

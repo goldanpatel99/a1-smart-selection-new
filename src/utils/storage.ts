@@ -81,8 +81,21 @@ export const storage = {
   saveEvents(events: WeddingEvent[]): void {
     try {
       localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(events));
-    } catch (e) {
-      console.error('Failed to save events', e);
+    } catch {
+      // If quota exceeded due to large photo base64 strings, save lightweight metadata copy to localStorage
+      try {
+        const lightweight = events.map((e) => ({
+          ...e,
+          photos: e.photos.map((p) => ({
+            ...p,
+            url: '', // strip heavy base64 from localStorage copy
+            thumbnailUrl: '',
+          })),
+        }));
+        localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(lightweight));
+      } catch (innerErr) {
+        console.warn('Could not save to localStorage:', innerErr);
+      }
     }
   },
 

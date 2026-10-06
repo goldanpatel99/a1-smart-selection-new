@@ -93,32 +93,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             </>
           ) : (
             <>
-              <button
-                onClick={() => navigateTo('landing')}
-                className="px-3 py-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50 transition-colors text-xs"
-              >
-                Home
-              </button>
-              {currentUser && currentUser.role === 'photographer' && (
-                <>
-                  <button
-                    onClick={() => navigateTo('dashboard')}
-                    className={`px-3 py-1.5 rounded-lg transition-colors ${
-                      currentView === 'dashboard'
-                        ? 'bg-neutral-800 text-white'
-                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-                    }`}
-                  >
-                    Dashboard
-                  </button>
-                  <button
-                    onClick={onOpenBuyPoints}
-                    className="px-3 py-1.5 text-amber-400 hover:text-amber-300 rounded-lg hover:bg-amber-500/10 transition-colors flex items-center gap-1.5"
-                  >
-                    <Coins className="w-4 h-4" />
-                    Recharge Points
-                  </button>
-                </>
+              {/* Only show Home if NOT logged in as photographer */}
+              {(!currentUser || currentUser.role !== 'photographer') && (
+                <button
+                  onClick={() => navigateTo('landing')}
+                  className="px-3 py-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50 transition-colors text-xs"
+                >
+                  Home
+                </button>
               )}
 
               {currentUser && currentUser.role === 'admin' && (
@@ -136,73 +118,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </>
           )}
-
-          {/* Quick Direct Review Buttons (Sample Buttons for Testing) */}
-          <div className="flex items-center gap-1.5 pl-2 border-l border-neutral-800">
-            <button
-              onClick={() => navigateTo('dashboard')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1.5 ${
-                currentView === 'dashboard'
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm'
-                  : 'bg-neutral-900 border-neutral-700/80 hover:border-amber-400 text-neutral-300 hover:text-white'
-              }`}
-              title="Open Photographer Studio Dashboard"
-            >
-              <Store className="w-3.5 h-3.5 text-amber-400" />
-              <span>Studio View</span>
-            </button>
-            <button
-              onClick={() => navigateTo('admin-panel')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1.5 ${
-                currentView === 'admin-panel'
-                  ? 'bg-red-500/20 text-red-300 border-red-500/40 shadow-sm'
-                  : 'bg-neutral-900 border-neutral-700/80 hover:border-red-400 text-neutral-300 hover:text-white'
-              }`}
-              title="Open Master Admin Panel"
-            >
-              <Shield className="w-3.5 h-3.5 text-red-400" />
-              <span>Admin Portal</span>
-            </button>
-          </div>
         </nav>
 
         {/* Right CTA / Auth / User Menu */}
         <div className="flex items-center gap-2.5">
-          {/* WhatsApp Customer Support Button - Visual: Help Desk */}
-          <a
-            href="https://wa.me/917970641503?text=Namaste%20Goldan%20ji,%20mujhe%20A1%20Smart%20Selection%20ke%20bare%20mein%20sahayata%20chahiye."
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/70 hover:bg-emerald-900/90 border border-emerald-500/40 text-emerald-300 rounded-xl text-xs font-semibold transition-all hover:scale-105 shadow-sm"
-            title="Customer Support on WhatsApp Help Desk"
-          >
-            <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Help Desk</span>
-          </a>
-
           {currentUser ? (
             <>
-              {/* Points Indicator Pill */}
-              {currentUser.role === 'photographer' && (
-                <div
-                  onClick={onOpenBuyPoints}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full border cursor-pointer transition-all hover:scale-105 ${
-                    currentUser.points === 0
-                      ? 'bg-rose-950/50 border-rose-500/40 text-rose-300 hover:bg-rose-900/60'
-                      : 'bg-neutral-900 border-amber-500/30 text-amber-300 hover:bg-neutral-800'
-                  }`}
-                  title="Click to recharge points"
-                >
-                  <Coins className={`w-4 h-4 ${currentUser.points === 0 ? 'text-rose-400 animate-pulse' : 'text-amber-400'}`} />
-                  <span className="text-xs font-bold font-mono">
-                    {currentUser.points} {currentUser.points === 1 ? 'Point' : 'Points'}
-                  </span>
-                  <div className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center text-[10px] font-bold">
-                    +
-                  </div>
-                </div>
-              )}
-
               {/* User Dropdown */}
               <div className="relative">
                 <button
@@ -216,6 +137,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                       currentUser.name.charAt(0)
                     )}
                   </div>
+                  <span className="hidden sm:inline text-xs font-semibold text-neutral-200">
+                    {currentUser.studioName || currentUser.name}
+                  </span>
                   <ChevronDown className="w-3.5 h-3.5 text-neutral-400" />
                 </button>
 
@@ -235,38 +159,16 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                     <div className="py-1">
                       {currentUser.role === 'photographer' && (
-                        <>
-                          <button
-                            onClick={() => {
-                              navigateTo('dashboard');
-                              setShowUserDropdown(false);
-                            }}
-                            className="w-full text-left px-3 py-2 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded-lg flex items-center gap-2"
-                          >
-                            <Store className="w-4 h-4 text-amber-400" />
-                            Studio Dashboard
-                          </button>
-                          <button
-                            onClick={() => {
-                              onOpenSettings();
-                              setShowUserDropdown(false);
-                            }}
-                            className="w-full text-left px-3 py-2 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded-lg flex items-center gap-2"
-                          >
-                            <Sliders className="w-4 h-4 text-neutral-400" />
-                            Studio & Watermark Settings
-                          </button>
-                          <button
-                            onClick={() => {
-                              onOpenBuyPoints();
-                              setShowUserDropdown(false);
-                            }}
-                            className="w-full text-left px-3 py-2 text-xs text-amber-400 hover:bg-amber-500/10 rounded-lg flex items-center gap-2 font-medium"
-                          >
-                            <Coins className="w-4 h-4 text-amber-400" />
-                            Recharge Studio Points
-                          </button>
-                        </>
+                        <button
+                          onClick={() => {
+                            onOpenSettings();
+                            setShowUserDropdown(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded-lg flex items-center gap-2"
+                        >
+                          <Sliders className="w-4 h-4 text-neutral-400" />
+                          Studio & Watermark Settings
+                        </button>
                       )}
 
                       {currentUser.role === 'admin' && (
