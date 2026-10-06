@@ -155,11 +155,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </span>
             </h1>
 
-            <p className="mt-6 text-base sm:text-lg text-neutral-300 leading-relaxed font-normal">
-              Na WhatsApp par photo numbers lene ka jhanjhat, na Google Drive ke slow links.
-              Photographer preview folder upload karta hai, client bina login photo{' '}
-              <span className="text-rose-400 font-bold">❤️ Heart Tap</span> karta hai,
-              aur script aapke computer pe selected photos automatically copy kar deti hai.
+            <p className="mt-6 text-base sm:text-lg text-neutral-300 leading-relaxed font-normal max-w-2xl mx-auto">
+              Na WhatsApp par photo numbers lene ka jhanjhat, na Google Drive ke slow links. Select photo like watching Instagram status.
             </p>
 
             {/* CTAs */}

@@ -111,7 +111,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
         {/* Title */}
-        <div className="mb-6">
+        <div className="mb-4">
           <h2 className="text-2xl font-bold font-heading text-white">
             {mode === 'login' && 'Photographer Login'}
             {mode === 'signup' && 'Studio Registration'}
@@ -126,6 +126,42 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               'Manage photographers, adjust points, reset passwords, and system pricing.'}
           </p>
         </div>
+
+        {/* Admin Credentials Helper Box */}
+        {mode === 'admin' && (
+          <div className="p-3.5 bg-neutral-950 border border-amber-500/30 rounded-xl mb-4 text-xs space-y-2">
+            <div className="font-bold text-amber-400 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5" />
+                <span>Admin Login Credentials:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('admin@nepoliancinematicstudio.com');
+                  setPassword('admin@nepolian');
+                }}
+                className="text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-lg transition-colors font-medium"
+              >
+                ⚡ Auto-Fill ID & Pass
+              </button>
+            </div>
+            <div className="text-[11px] text-neutral-300 space-y-1 font-mono">
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-400 font-sans">Admin ID:</span>
+                <span className="font-bold text-white">admin@nepoliancinematicstudio.com</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-400 font-sans">Alternate ID:</span>
+                <span className="font-bold text-amber-200">goldanpatel99@gmail.com</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-400 font-sans">Password:</span>
+                <span className="font-bold text-emerald-400">admin@nepolian</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Form - All fields strictly mandatory */}
         <form onSubmit={handleSubmit} className="space-y-3.5">

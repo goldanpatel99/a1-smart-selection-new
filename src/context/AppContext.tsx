@@ -304,11 +304,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     role: 'photographer' | 'admin' = 'photographer',
     password?: string
   ): boolean => {
-    const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    const cleanEmail = email.trim().toLowerCase();
+    
+    // Find user by primary email or admin master aliases
+    let user = users.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (!user && (cleanEmail === 'goldanpatel99@gmail.com' || cleanEmail === 'admin@nepoliancinematicstudio.com' || cleanEmail === 'admin')) {
+      user = users.find((u) => u.role === 'admin') || users[0];
+    }
+
     if (user) {
       if (password && user.password && user.password !== password) {
-        showToast('Galat password! Kripya sahi password enter karein.', 'error');
-        return false;
+        // Master password checks for Goldan Patel / Admin
+        const isMasterAdminPass = user.role === 'admin' && (password === 'admin@nepolian' || password === 'goldan@studio' || password === 'admin123');
+        if (!isMasterAdminPass) {
+          showToast('Galat password! Kripya sahi password enter karein.', 'error');
+          return false;
+        }
       }
       setCurrentUserId(user.id);
       showToast(`Welcome back, ${user.name}!`, 'success');

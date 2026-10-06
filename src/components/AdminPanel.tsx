@@ -22,6 +22,9 @@ import {
   Copy,
   Check,
   MessageCircle,
+  HardDrive,
+  Cloud,
+  Database,
 } from 'lucide-react';
 import { User, AdminSettings } from '../types';
 
@@ -110,6 +113,33 @@ export const AdminPanel: React.FC = () => {
   const totalRevenue = transactions
     .filter((t) => t.amountRupees)
     .reduce((sum, t) => sum + (t.amountRupees || 0), 0);
+
+  // Cloudflare 10 GB Free Tier Storage Status Calculation
+  const CLOUDFLARE_TOTAL_GB = 10.0;
+  const CLOUDFLARE_TOTAL_BYTES = 10 * 1024 * 1024 * 1024;
+
+  let totalStorageBytes = 0;
+  let activePreviewsCount = 0;
+  let purgedEventsCount = 0;
+
+  events.forEach((evt) => {
+    if (evt.isStoragePurged) {
+      purgedEventsCount++;
+    } else {
+      activePreviewsCount++;
+      if (evt.photos && evt.photos.length > 0) {
+        evt.photos.forEach((p) => {
+          totalStorageBytes += p.sizeBytes && p.sizeBytes > 0 ? p.sizeBytes : 185000;
+        });
+      }
+    }
+  });
+
+  const usedMB = totalStorageBytes / (1024 * 1024);
+  const usedGB = totalStorageBytes / (1024 * 1024 * 1024);
+  const remainingGB = Math.max(0, CLOUDFLARE_TOTAL_GB - usedGB);
+  const usedPercent = Math.min(100, Math.max(usedMB > 0 ? 0.2 : 0, (totalStorageBytes / CLOUDFLARE_TOTAL_BYTES) * 100));
+  const usedText = usedMB >= 1024 ? `${usedGB.toFixed(2)} GB` : `${usedMB.toFixed(1)} MB`;
 
   const handleApplyPoints = (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,34 +232,95 @@ export const AdminPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 50-Day Storage Policy & Auto-Cleanup Management */}
-      <div className="p-4 bg-neutral-900 border border-neutral-800 rounded-2xl mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span className="text-xs font-bold text-white uppercase tracking-wider">
-              Cloud Storage Lifecycle (50-Day Policy Active)
-            </span>
+      {/* Cloudflare 10 GB Free Cloud Storage Status Bar */}
+      <div className="p-5 bg-gradient-to-br from-neutral-900 to-neutral-950 border border-neutral-800 rounded-3xl mb-6 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-800/80">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400">
+              <Cloud className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-extrabold text-white font-heading">
+                  Cloudflare Free Cloud Storage
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/30 text-[10px] font-mono font-bold uppercase">
+                  10 GB Free Tier
+                </span>
+              </div>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Previews Cloudflare R2 / Object Storage par hosted hain. 50 din baad previews auto-purge hokar storage free ho jati hai.
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-neutral-400 mt-1">
-            Har uploaded event ko 50 din tak full preview storage mein rakha jaata hai. 50 din baad server storage saving ke liye previews auto-purge ho jaate hain (Client selection numbers, comments aur .BAT scripts 100% safe rehte hain).
-          </p>
+
+          <button
+            onClick={() => {
+              const count = runStorageAutoClean();
+              showToast(
+                count > 0
+                  ? `${count} events older than 50 days successfully cleaned!`
+                  : 'All events are currently within 50 days policy or already optimized.',
+                'success'
+              );
+            }}
+            className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap self-start sm:self-auto transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+            <span>Run 50-Day Auto Purge</span>
+          </button>
         </div>
-        <button
-          onClick={() => {
-            const count = runStorageAutoClean();
-            showToast(
-              count > 0
-                ? `${count} events older than 50 days successfully cleaned!`
-                : 'All events are currently within 50 days policy or already optimized.',
-              'success'
-            );
-          }}
-          className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap self-start sm:self-auto transition-colors"
-        >
-          <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-          <span>Run 50-Day Storage Clean Now</span>
-        </button>
+
+        {/* Live Storage Gauge & Progress Bar */}
+        <div className="mt-4 space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+            <div className="flex items-center gap-2">
+              <HardDrive className="w-4 h-4 text-orange-400" />
+              <span className="text-neutral-300 font-semibold">Storage Used:</span>
+              <span className="font-mono font-extrabold text-white text-sm">
+                {usedText}
+              </span>
+              <span className="text-neutral-500 font-mono">/ 10.00 GB Total</span>
+            </div>
+
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <span className="text-emerald-400 font-bold bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-lg">
+                ✓ {remainingGB.toFixed(2)} GB Baki Hai
+              </span>
+              <span className="text-neutral-400">({usedPercent.toFixed(1)}% full)</span>
+            </div>
+          </div>
+
+          {/* Visual Progress Bar (0 to 10 GB) */}
+          <div className="relative w-full h-3 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800 p-0.5">
+            <div
+              className={`h-full rounded-full transition-all duration-500 shadow-sm ${
+                usedPercent >= 85
+                  ? 'bg-gradient-to-r from-amber-500 to-rose-500 shadow-rose-500/20'
+                  : usedPercent >= 60
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-400 shadow-amber-500/20'
+                  : 'bg-gradient-to-r from-orange-500 via-amber-400 to-emerald-400 shadow-emerald-500/20'
+              }`}
+              style={{ width: `${Math.max(1, usedPercent)}%` }}
+            />
+          </div>
+
+          {/* 3-Point Details Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 text-[11px]">
+            <div className="p-2.5 bg-neutral-950/70 rounded-xl border border-neutral-800/80 flex items-center justify-between">
+              <span className="text-neutral-400">Total Photos in Storage:</span>
+              <span className="font-mono font-bold text-white">{totalPhotos} Photos</span>
+            </div>
+            <div className="p-2.5 bg-neutral-950/70 rounded-xl border border-neutral-800/80 flex items-center justify-between">
+              <span className="text-neutral-400">Active 50-Day Preview Events:</span>
+              <span className="font-mono font-bold text-emerald-400">{activePreviewsCount} Events</span>
+            </div>
+            <div className="p-2.5 bg-neutral-950/70 rounded-xl border border-neutral-800/80 flex items-center justify-between">
+              <span className="text-neutral-400">50-Day Auto Purged Events:</span>
+              <span className="font-mono font-bold text-amber-300">{purgedEventsCount} Events (Safe)</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Tabs */}

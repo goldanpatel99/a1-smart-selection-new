@@ -33,6 +33,7 @@ import {
   LogOut,
   ShieldCheck,
   Store,
+  HardDrive,
 } from 'lucide-react';
 import { WeddingEvent } from '../types';
 
@@ -616,17 +617,50 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           </span>
                         </div>
 
-                        {/* Storage Policy Lifecycle Indicator */}
-                        <div className="flex items-center justify-between text-[10px] text-neutral-500 pt-1 border-t border-neutral-800/60 font-mono">
-                          <span>Cloud Storage:</span>
-                          {event.isStoragePurged ? (
-                            <span className="text-neutral-400">Purged (50d Saver)</span>
-                          ) : (
-                            <span className="text-emerald-400/90">
-                              Active ({Math.max(0, Math.ceil((50 * 24 * 60 * 60 * 1000 - (Date.now() - new Date(event.createdAt).getTime())) / (24 * 60 * 60 * 1000)))}d left)
-                            </span>
-                          )}
-                        </div>
+                        {/* 50-Day Storage Lifecycle (Kitne din huye / 50 dino me se) */}
+                        {(() => {
+                          const eventCreatedMs = new Date(event.createdAt || Date.now()).getTime();
+                          const daysPassed = Math.max(0, Math.floor((nowTime - eventCreatedMs) / (24 * 60 * 60 * 1000)));
+                          const daysCompleted = Math.min(50, daysPassed);
+                          const daysRemaining = Math.max(0, 50 - daysPassed);
+                          const storagePercent = Math.min(100, Math.round((daysCompleted / 50) * 100));
+
+                          return (
+                            <div className="pt-2 border-t border-neutral-800/80 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-neutral-400 flex items-center gap-1 font-medium">
+                                  <HardDrive className="w-3.5 h-3.5 text-orange-400" />
+                                  <span>Cloudflare Storage:</span>
+                                </span>
+                                {event.isStoragePurged || daysPassed >= 50 ? (
+                                  <span className="font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded text-[10px] border border-amber-500/20">
+                                    50/50 Din Puray (Previews Purged • Selections Safe)
+                                  </span>
+                                ) : (
+                                  <div className="flex items-center gap-1 font-mono text-[11px]">
+                                    <span className="text-white font-extrabold">{daysCompleted}/50</span>
+                                    <span className="text-neutral-400 font-sans">dino me se</span>
+                                    <span className="text-emerald-400 font-semibold text-[10px]">({daysRemaining}d bache)</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Visual 50-Day Progress Bar */}
+                              <div className="w-full h-1.5 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
+                                <div
+                                  className={`h-full transition-all duration-300 rounded-full ${
+                                    daysPassed >= 50 || event.isStoragePurged
+                                      ? 'bg-amber-500'
+                                      : daysPassed >= 40
+                                      ? 'bg-rose-500'
+                                      : 'bg-gradient-to-r from-orange-500 to-emerald-400'
+                                  }`}
+                                  style={{ width: `${Math.max(2, storagePercent)}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {event.clientNotes && (

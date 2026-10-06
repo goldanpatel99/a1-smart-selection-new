@@ -197,10 +197,10 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({ isOpen, onClose 
               </div>
               <div>
                 <h2 className="text-2xl font-bold font-heading text-white">
-                  Buy Points for Your Studio
+                  Buy Points
                 </h2>
                 <p className="text-xs text-neutral-400">
-                  Instant credit via Razorpay. UPI, Cards & NetBanking supported.
+                  Instant point credit
                 </p>
               </div>
             </div>
@@ -238,16 +238,11 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({ isOpen, onClose 
                   </span>
                   <span>Select Points Package</span>
                 </div>
-                <span className="text-[10px] text-amber-400/90 font-mono">
-                  1 Point = 1 Event
-                </span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
                 {adminSettings.pricingPackages.map((pkg) => {
                   const isSelected = selectedPackageId === pkg.id;
-                  const perEventCost = Math.round(pkg.priceRupees / Math.max(1, pkg.points));
-                  const autoSavings = Math.max(0, baseRatePerPoint * pkg.points - pkg.priceRupees);
 
                   return (
                     <div
@@ -262,15 +257,11 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({ isOpen, onClose 
                           : 'bg-neutral-950/60 border-neutral-800 hover:border-neutral-700'
                       }`}
                     >
-                      {pkg.isPopular ? (
+                      {pkg.isPopular && (
                         <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full shadow">
-                          {pkg.savingsText || (autoSavings > 0 ? `Save ₹${autoSavings} 🔥` : 'Best Value 🔥')}
+                          {pkg.savingsText || 'Best Value 🔥'}
                         </div>
-                      ) : autoSavings > 0 ? (
-                        <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-neutral-800 text-emerald-400 border border-emerald-500/30 text-[9px] font-bold px-2 py-0.5 rounded-full shadow">
-                          Save ₹{autoSavings}
-                        </div>
-                      ) : null}
+                      )}
 
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
@@ -286,30 +277,16 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({ isOpen, onClose 
                           </div>
                         </div>
 
-                        <div className="flex items-baseline gap-2 my-1">
-                          <span className="text-2xl sm:text-3xl font-extrabold text-white">
+                        <div className="my-1.5">
+                          <span className="text-2xl sm:text-3xl font-extrabold text-white font-mono">
                             ₹{pkg.priceRupees.toLocaleString('en-IN')}
                           </span>
-                          <span className="text-[11px] text-emerald-400 font-mono font-bold">
-                            (₹{perEventCost}/evt)
-                          </span>
                         </div>
 
-                        <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5 mb-1.5">
+                        <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
                           <Zap className="w-3.5 h-3.5" />
-                          {pkg.points} {pkg.points === 1 ? 'Point' : 'Points'}
-                          {autoSavings > 0 && (
-                            <span className="text-[10px] text-neutral-400 font-normal">
-                              • Save ₹{autoSavings}
-                            </span>
-                          )}
+                          <span>{pkg.points} {pkg.points === 1 ? 'Point' : 'Points'}</span>
                         </div>
-
-                        <p className="text-[11px] text-neutral-400 leading-snug">{pkg.tagline}</p>
-                      </div>
-
-                      <div className="mt-3 pt-2.5 border-t border-neutral-800/80 text-[10px] text-neutral-500">
-                        {adminSettings.pointsPerEvent || 1} Point = 1 Wedding Event
                       </div>
                     </div>
                   );
@@ -317,48 +294,16 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({ isOpen, onClose 
               </div>
             </div>
 
-            {/* Razorpay Gateway Checkout Box (Clean & Lag-Free) */}
+            {/* Secure Payment Checkout Box */}
             <div className="p-5 bg-neutral-950 rounded-2xl border border-amber-500/30 space-y-4">
               <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-extrabold text-white flex items-center gap-2">
-                    <CreditCard className="w-4 h-4 text-amber-400" />
-                    <span>Razorpay Official Payment Gateway</span>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono">
-                      Live
-                    </span>
-                  </div>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    UPI (Google Pay, PhonePe, Paytm, CRED), RuPay/Visa Cards & NetBanking
-                  </p>
+                <div className="flex items-center gap-2 text-sm font-extrabold text-white">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Secure Payment</span>
                 </div>
 
-                <div className="text-right">
-                  <div className="text-[11px] text-neutral-400">Total Payable:</div>
-                  <div className="text-2xl font-extrabold text-amber-400 font-mono">
-                    ₹{selectedPackage.priceRupees.toLocaleString('en-IN')}
-                  </div>
-                </div>
-              </div>
-
-              {/* Supported Payment Channels */}
-              <div className="p-3 bg-neutral-900/90 rounded-xl border border-neutral-800 flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-300">
-                <div className="flex items-center gap-2">
-                  <Lock className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>256-Bit SSL Encrypted Instant Checkout</span>
-                </div>
-                <div className="flex items-center gap-2.5 text-neutral-400 font-mono text-[10px]">
-                  <span className="text-neutral-200">GPay</span>
-                  <span>•</span>
-                  <span className="text-neutral-200">PhonePe</span>
-                  <span>•</span>
-                  <span className="text-neutral-200">Paytm</span>
-                  <span>•</span>
-                  <span className="text-neutral-200">CRED</span>
-                  <span>•</span>
-                  <span className="text-neutral-200">Cards</span>
-                  <span>•</span>
-                  <span className="text-neutral-200">NetBanking</span>
+                <div className="text-2xl font-extrabold text-amber-400 font-mono">
+                  ₹{selectedPackage.priceRupees.toLocaleString('en-IN')}
                 </div>
               </div>
 
@@ -372,23 +317,18 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({ isOpen, onClose 
                 {isProcessingRazorpay ? (
                   <>
                     <RefreshCw className="w-5 h-5 animate-spin text-neutral-950" />
-                    <span>Opening Razorpay Secure Window...</span>
+                    <span>Opening Secure Window...</span>
                   </>
                 ) : (
                   <>
                     <CreditCard className="w-5 h-5" />
                     <span>
-                      Pay ₹{selectedPackage.priceRupees.toLocaleString('en-IN')} with Razorpay
+                      Pay ₹{selectedPackage.priceRupees.toLocaleString('en-IN')}
                     </span>
                     <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                   </>
                 )}
               </button>
-
-              <div className="flex items-center justify-center gap-1.5 text-[10px] text-neutral-400">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Zero lag • Payment complete hote hi points turant aapke account mein jud jayenge.</span>
-              </div>
             </div>
 
             {/* Payment Issue / Failure Banner & WhatsApp Support */}
