@@ -129,9 +129,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     storage.saveEvents(events);
-    events.forEach((evt) => {
-      firebaseService.saveEvent(evt);
-    });
   }, [events]);
 
   useEffect(() => {
@@ -156,21 +153,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const existing = prevMap.get(ce.id);
           const existingPhotos = existing?.photos || [];
           const cePhotos = ce.photos || [];
-          const finalPhotos = existingPhotos.length > 0 ? existingPhotos : cePhotos;
+          let finalPhotos = existingPhotos.length > 0 ? existingPhotos : cePhotos;
+
+          // Cross-device live selection sync: If cloud event has updated selectedPhotoIds, apply to photos!
+          if (ce.selectedPhotoIds && Array.isArray(ce.selectedPhotoIds) && finalPhotos.length > 0) {
+            const selectedSet = new Set(ce.selectedPhotoIds);
+            finalPhotos = finalPhotos.map((p) => ({
+              ...p,
+              isSelected: selectedSet.has(p.id),
+            }));
+          }
+
+          // Strict folder sync: ONLY folders uploaded by photographer exist (NO default Highlights/Ceremony)
           const finalFolders = (ce.folders && ce.folders.length > 0)
             ? ce.folders
             : (existing?.folders && existing.folders.length > 0)
             ? existing.folders
-            : [
-                { id: 'f1', name: 'Highlights', eventId: ce.id, order: 0, visible: true },
-                { id: 'f2', name: 'Ceremony', eventId: ce.id, order: 1, visible: true },
-              ];
+            : [];
 
           return {
             ...ce,
             folders: finalFolders,
             photos: finalPhotos,
             photosCount: ce.photosCount ?? finalPhotos.length,
+            selectedCount: ce.selectedPhotoIds ? ce.selectedPhotoIds.length : (ce.selectedCount ?? finalPhotos.filter((p) => p.isSelected).length),
           };
         });
       });
@@ -228,11 +234,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setEvents((prev) =>
           prev.map((e) => {
             if (e.id !== activeEventId) return e;
+            const selectedIds = cloudPhotos.filter((p) => p.isSelected).map((p) => p.id);
             return {
               ...e,
               photos: cloudPhotos,
               photosCount: cloudPhotos.length,
-              selectedCount: cloudPhotos.filter((p) => p.isSelected).length,
+              selectedCount: selectedIds.length,
+              selectedPhotoIds: selectedIds,
               coverPhotoUrl: e.coverPhotoUrl || cloudPhotos[0]?.url,
             };
           })
@@ -950,12 +958,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const selectedAt = willSelect ? new Date().toISOString() : undefined;
 
-        // Persist photo selection state to Cloud Firestore
-        firebaseService.updatePhoto(eventId, photoId, {
-          isSelected: willSelect,
-          selectedAt: selectedAt || undefined,
-        });
-
         const updatedPhotos = currentPhotos.map((p) =>
           p.id === photoId
             ? {
@@ -966,10 +968,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             : p
         );
 
+        const updatedSelectedIds = updatedPhotos.filter((p) => p.isSelected).map((p) => p.id);
+        const updatedSelectedCount = updatedSelectedIds.length;
+
+        // Persist photo selection state to Cloud Firestore (both photo doc & parent event for instant multi-device sync)
+        firebaseService.updatePhoto(eventId, photoId, {
+          isSelected: willSelect,
+          selectedAt: selectedAt || undefined,
+        });
+
+        firebaseService.updateEventSelections(eventId, updatedSelectedIds, updatedSelectedCount);
+
         return {
           ...e,
           photos: updatedPhotos,
-          selectedCount: updatedPhotos.filter((p) => p.isSelected).length,
+          selectedPhotoIds: updatedSelectedIds,
+          selectedCount: updatedSelectedCount,
+          lastSelectedAt: new Date().toISOString(),
         };
       })
     );
@@ -979,12 +994,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
-        return {
+        const updatedEvent: WeddingEvent = {
           ...e,
           status: 'completed',
           submittedAt: new Date().toISOString(),
           clientNotes: clientNotes,
         };
+        firebaseService.saveEvent(updatedEvent);
+        return updatedEvent;
       })
     );
     showToast('Selection successfully submitted! Photographer has been notified.', 'success');

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Camera } from 'lucide-react';
 
 interface DynamicSecurityWatermarkProps {
   studioName?: string;
@@ -8,45 +9,24 @@ interface DynamicSecurityWatermarkProps {
 }
 
 export const DynamicSecurityWatermark: React.FC<DynamicSecurityWatermarkProps> = ({
-  studioName = 'NEPOLIAN CINEMATIC STUDIO',
-  clientPhone,
+  studioName = 'STUDIO',
   className = '',
-  opacity = 0.22,
 }) => {
-  const watermarkText = studioName.toUpperCase();
-  const phoneText = clientPhone ? ` • ${clientPhone}` : '';
+  const watermarkText = (studioName || 'STUDIO').toUpperCase();
 
   return (
     <div
-      className={`absolute inset-0 pointer-events-none select-none overflow-hidden z-10 flex items-center justify-center ${className}`}
+      className={`absolute bottom-2.5 right-2.5 pointer-events-none select-none z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-white shadow-lg ${className}`}
       style={{
         WebkitTouchCallout: 'none',
         WebkitUserSelect: 'none',
         userSelect: 'none',
       }}
     >
-      {/* Diagonal Multi-Line Security Watermark Pattern (Anti-Screenshot Protection) */}
-      <div
-        className="w-[200%] h-[200%] -rotate-25 flex flex-col justify-around items-center opacity-80"
-        style={{
-          opacity: opacity,
-        }}
-      >
-        {[0, 1, 2, 3, 4].map((row) => (
-          <div
-            key={row}
-            className="flex items-center gap-12 whitespace-nowrap text-white font-mono font-extrabold text-[10px] sm:text-xs tracking-widest drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
-          >
-            <span>{watermarkText}</span>
-            <span className="text-amber-400 font-sans text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/40 border border-white/10">
-              SELECTION PREVIEW{phoneText}
-            </span>
-            <span>{watermarkText}</span>
-            <span className="text-[9px] text-rose-300">DO NOT SCREENSHOT</span>
-            <span>{watermarkText}</span>
-          </div>
-        ))}
-      </div>
+      <Camera className="w-3 h-3 text-amber-400 flex-shrink-0" />
+      <span className="font-heading font-semibold text-[10px] tracking-wider uppercase text-neutral-200 truncate max-w-[150px]">
+        {watermarkText}
+      </span>
     </div>
   );
 };

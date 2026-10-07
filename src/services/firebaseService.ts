@@ -49,22 +49,33 @@ export const firebaseService = {
     try {
       // Strip massive base64 photo arrays from parent document so it NEVER hits 1MB limit
       const { photos, ...meta } = event;
+      const selectedIds = (photos || []).filter((p) => p.isSelected).map((p) => p.id);
       const cleanEventMeta = {
         ...meta,
-        photosCount: photos.length,
-        selectedCount: photos.filter((p) => p.isSelected).length,
+        photosCount: photos ? photos.length : (event.photosCount || 0),
+        selectedCount: selectedIds.length,
+        selectedPhotoIds: selectedIds,
       };
       await setDoc(doc(db, 'events', event.id), cleanEventMeta, { merge: true });
-
-      // If photos are present, also ensure each photo is saved to subcollection
-      if (photos && photos.length > 0) {
-        // Save in background without blocking
-        firebaseService.savePhotos(event.id, photos).catch((err) => {
-          console.warn('Background savePhotos error:', err);
-        });
-      }
     } catch (err) {
       console.warn('Error saving event to Firestore:', err);
+    }
+  },
+
+  // Ultra-fast instant sync for client photo selections (cross-device real-time sync)
+  updateEventSelections: async (eventId: string, selectedPhotoIds: string[], selectedCount: number) => {
+    try {
+      await setDoc(
+        doc(db, 'events', eventId),
+        {
+          selectedPhotoIds,
+          selectedCount,
+          lastSelectedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Error updating event selections in Firestore:', err);
     }
   },
 

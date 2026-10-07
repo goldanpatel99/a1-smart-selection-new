@@ -42,6 +42,8 @@ export interface WeddingEvent {
   photosPerSheet?: number; // default: 6 photos = 1 sheet (1 page)
   photosCount?: number;
   selectedCount?: number;
+  selectedPhotoIds?: string[]; // IDs of currently selected photos for ultra-fast multi-device live sync
+  lastSelectedAt?: string;
   storageCleanedAt?: string; // timestamp when preview storage was purged after 50 days
   isStoragePurged?: boolean; // true if preview photos were purged for storage saving
   coupleStory?: string; // romantic story/quote for hero welcome screen

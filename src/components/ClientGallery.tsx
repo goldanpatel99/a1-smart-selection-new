@@ -25,21 +25,20 @@ import {
   Instagram,
   PhoneCall,
 } from 'lucide-react';
-import { CoupleHeroWelcomeModal } from './CoupleHeroWelcomeModal';
 import { DynamicSecurityWatermark } from './DynamicSecurityWatermark';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 
 export const ClientGallery: React.FC = () => {
-  const { activeEvent, users, togglePhotoSelection, submitClientSelection, navigateTo, showToast } = useApp();
+  const { activeEvent, users, togglePhotoSelection, submitClientSelection, showToast } = useApp();
 
   const [activeFolderId, setActiveFolderId] = useState<string>('all');
   const [filterMode, setFilterMode] = useState<'all' | 'selected' | 'unselected'>('all');
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(activeEvent?.status === 'completed');
   const [clientNotes, setClientNotes] = useState(activeEvent?.clientNotes || '');
   const [copiedLink, setCopiedLink] = useState(false);
-  const [showHeroWelcome, setShowHeroWelcome] = useState(true);
 
   // Offline Mode & Slow Network Auto-Saver
   const { isOnline, pendingCount, isSyncing, enqueuePhotoSync } = useOfflineSync(showToast);
@@ -59,7 +58,7 @@ export const ClientGallery: React.FC = () => {
   useEffect(() => {
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
-      showToast('🛡️ Selection Preview Protected • Direct downloading and right-click is disabled by studio.', 'info');
+      showToast('🛡️ Selection Preview Protected • Direct downloading is disabled by studio.', 'info');
     };
 
     const handleDragStart = (e: DragEvent) => {
@@ -86,18 +85,15 @@ export const ClientGallery: React.FC = () => {
 
   if (!activeEvent) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 text-center">
-        <div>
-          <h2 className="text-xl font-bold text-white mb-2">Event Not Found</h2>
-          <p className="text-xs text-neutral-400 mb-4">
-            The link you opened might be invalid or expired.
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 text-center">
+        <div className="max-w-md p-8 bg-neutral-900 border border-neutral-800 rounded-3xl shadow-xl">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto mb-4">
+            <Camera className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Private Client Gallery</h2>
+          <p className="text-xs text-neutral-400 leading-relaxed">
+            Aapka wedding event link filhaal available nahi hai ya complete ho chuka hai. Kripya apne studio/photographer se contact karein.
           </p>
-          <button
-            onClick={() => navigateTo('landing')}
-            className="px-4 py-2 bg-amber-500 text-neutral-950 font-bold text-xs rounded-xl"
-          >
-            Back to Home
-          </button>
         </div>
       </div>
     );
@@ -223,22 +219,6 @@ export const ClientGallery: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-28">
-      {/* Top Banner for Photographer Preview switch */}
-      <div className="bg-neutral-900 border-b border-neutral-800 px-4 py-2 text-xs flex items-center justify-between text-neutral-400">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-          <span className="font-semibold text-neutral-200">Client View Mode:</span>
-          <span>No login required. Real-time auto-saving active.</span>
-        </div>
-        <button
-          onClick={() => navigateTo('dashboard')}
-          className="hover:text-amber-400 text-neutral-300 font-semibold flex items-center gap-1"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to Studio Dashboard</span>
-        </button>
-      </div>
-
       {/* Hero Header */}
       <div className="relative py-12 px-4 sm:px-6 lg:px-8 text-center border-b border-neutral-800/80 bg-gradient-to-b from-neutral-900/80 to-neutral-950">
         <div className="max-w-3xl mx-auto">
@@ -254,13 +234,8 @@ export const ClientGallery: React.FC = () => {
             {activeEvent.title}
           </p>
 
-          {/* Event Date & Live Countdown Timer */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 mt-4 text-xs">
-            <div className="flex items-center gap-1.5 text-neutral-400 font-mono">
-              <Calendar className="w-4 h-4 text-neutral-500" />
-              <span>Event: {activeEvent.eventDate}</span>
-            </div>
-
+          {/* Live Countdown Timer */}
+          <div className="flex items-center justify-center gap-3 mt-4 text-xs">
             {/* Live Ticking Countdown Box */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900 border border-amber-500/40 text-amber-300 font-mono shadow-md">
               <span className="relative flex h-2 w-2">
@@ -378,19 +353,8 @@ export const ClientGallery: React.FC = () => {
             </div>
           </div>
 
-          {/* Right: Music, Offline Status & Submit Button */}
+          {/* Right: Offline Status & Submit Button */}
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            {/* Romantic Music & Story Hero Button */}
-            <button
-              type="button"
-              onClick={() => setShowHeroWelcome(true)}
-              className="px-3 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-850 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-              title="Romantic Wedding Music & Story"
-            >
-              <Music className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden md:inline">Music & Story</span>
-            </button>
-
             {/* Offline Auto-Saver Status Pill */}
             <div
               className={`px-2.5 py-1.5 rounded-xl text-[11px] font-mono flex items-center gap-1.5 border transition-all ${
@@ -559,7 +523,8 @@ export const ClientGallery: React.FC = () => {
               return (
                 <div
                   key={photo.id}
-                  className={`group relative rounded-2xl overflow-hidden aspect-[4/5] bg-neutral-900 border-2 select-none transition-all duration-200 ${
+                  onClick={() => setLightboxIndex(index)}
+                  className={`group relative rounded-2xl overflow-hidden aspect-[4/5] bg-neutral-900 border-2 select-none cursor-pointer transition-all duration-200 ${
                     isSelected
                       ? 'border-rose-500 ring-2 ring-rose-500/30 shadow-lg shadow-rose-500/10'
                       : 'border-neutral-800 hover:border-neutral-700'
@@ -569,19 +534,17 @@ export const ClientGallery: React.FC = () => {
                     src={photo.url}
                     alt={photo.filename}
                     loading="lazy"
-                    onClick={() => setLightboxIndex(index)}
                     onContextMenu={(e) => e.preventDefault()}
                     onDragStart={(e) => e.preventDefault()}
-                    className="w-full h-full object-cover cursor-zoom-in group-hover:scale-105 transition-transform duration-500 select-none pointer-events-none"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 select-none pointer-events-none"
                     style={{ WebkitTouchCallout: 'none' }}
                   />
 
-                  {/* Anti-Screenshot Dynamic Floating Watermark */}
+                  {/* Studio Logo Watermark in Bottom-Right Corner Only */}
                   {photographer?.enableAntiScreenshot !== false && (
                     <DynamicSecurityWatermark
                       studioName={activeEvent.studioName}
                       clientPhone={activeEvent.clientPhone}
-                      opacity={0.22}
                     />
                   )}
 
@@ -620,15 +583,18 @@ export const ClientGallery: React.FC = () => {
                   {/* Fullscreen icon */}
                   <button
                     type="button"
-                    onClick={() => setLightboxIndex(index)}
-                    className="absolute bottom-10 right-2 p-1.5 rounded-lg bg-black/60 text-white opacity-0 group-hover:opacity-100 hover:bg-black/80 transition-all"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLightboxIndex(index);
+                    }}
+                    className="absolute bottom-10 right-2 p-1.5 rounded-lg bg-black/60 text-white opacity-0 group-hover:opacity-100 hover:bg-black/80 transition-all z-20"
                     title="Zoom Fullscreen"
                   >
                     <Maximize2 className="w-3.5 h-3.5" />
                   </button>
 
                   {/* Filename footer */}
-                  <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+                  <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
                     <span className="text-[11px] font-mono text-white font-medium truncate drop-shadow">
                       {photo.filename}
                     </span>
@@ -692,55 +658,140 @@ export const ClientGallery: React.FC = () => {
             </div>
           </div>
 
-          {/* Lightbox Center Image View */}
-          <div className="relative flex-1 flex items-center justify-center p-4 overflow-hidden">
-            {/* Prev arrow */}
+          {/* Lightbox Center Image View with Touch Swiping */}
+          <div
+            className="relative flex-1 flex items-center justify-center p-2 sm:p-4 overflow-hidden touch-pan-y"
+            onTouchStart={(e) => setTouchStartX(e.touches[0].clientX)}
+            onTouchEnd={(e) => {
+              if (touchStartX === null) return;
+              const touchEndX = e.changedTouches[0].clientX;
+              const diff = touchStartX - touchEndX;
+              if (diff > 40 && lightboxIndex < filteredPhotos.length - 1) {
+                setLightboxIndex(lightboxIndex + 1); // Swiped Left -> Forward
+              } else if (diff < -40 && lightboxIndex > 0) {
+                setLightboxIndex(lightboxIndex - 1); // Swiped Right -> Backward
+              }
+              setTouchStartX(null);
+            }}
+          >
+            {/* Prev arrow (Desktop & Tablet) */}
             {lightboxIndex > 0 && (
               <button
                 onClick={() => setLightboxIndex(lightboxIndex - 1)}
-                className="absolute left-4 p-3 rounded-full bg-black/50 hover:bg-black/80 text-white backdrop-blur-md transition-colors z-10"
+                className="absolute left-2 sm:left-6 p-3 sm:p-4 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md transition-all hover:scale-110 z-20 shadow-xl border border-white/10"
+                title="Previous Photo (Left Arrow)"
               >
-                <ChevronLeft className="w-6 h-6" />
+                <ChevronLeft className="w-6 h-6 sm:w-7 sm:h-7" />
               </button>
             )}
 
-            <div className="relative max-h-[82vh] max-w-[92vw] overflow-hidden rounded-xl shadow-2xl flex items-center justify-center">
+            <div className="relative max-h-[82vh] max-w-[95vw] overflow-hidden rounded-2xl shadow-2xl flex items-center justify-center">
               <img
                 src={filteredPhotos[lightboxIndex].url}
                 alt={filteredPhotos[lightboxIndex].filename}
                 onContextMenu={(e) => e.preventDefault()}
                 onDragStart={(e) => e.preventDefault()}
-                className="max-h-[82vh] max-w-[92vw] object-contain rounded-xl transition-all select-none pointer-events-none"
+                className="max-h-[80vh] sm:max-h-[82vh] max-w-[94vw] object-contain rounded-2xl transition-all select-none"
                 style={{ WebkitTouchCallout: 'none' }}
               />
 
-              {/* Anti-Screenshot Dynamic Security Watermark in Fullscreen */}
+              {/* Clean Studio Watermark in Bottom-Right Corner Only */}
               {photographer?.enableAntiScreenshot !== false && (
                 <DynamicSecurityWatermark
                   studioName={activeEvent.studioName}
                   clientPhone={activeEvent.clientPhone}
-                  opacity={0.25}
                 />
               )}
             </div>
 
-            {/* Next arrow */}
+            {/* Next arrow (Desktop & Tablet) */}
             {lightboxIndex < filteredPhotos.length - 1 && (
               <button
                 onClick={() => setLightboxIndex(lightboxIndex + 1)}
-                className="absolute right-4 p-3 rounded-full bg-black/50 hover:bg-black/80 text-white backdrop-blur-md transition-colors z-10"
+                className="absolute right-2 sm:right-6 p-3 sm:p-4 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md transition-all hover:scale-110 z-20 shadow-xl border border-white/10"
+                title="Next Photo (Right Arrow)"
               >
-                <ChevronRight className="w-6 h-6" />
+                <ChevronRight className="w-6 h-6 sm:w-7 sm:h-7" />
               </button>
             )}
           </div>
 
-          {/* Lightbox Bottom bar */}
-          <div className="p-3 text-center text-xs text-neutral-400 bg-gradient-to-t from-black/80 to-transparent">
-            Arrow Keys: Navigate left/right • Space or H: Heart select • Esc: Close
+          {/* Lightbox Bottom Interactive Navigation Dock */}
+          <div className="p-3 sm:p-4 bg-gradient-to-t from-black via-black/90 to-transparent flex flex-col sm:flex-row items-center justify-between gap-3 text-white z-10">
+            {/* Mobile Navigation Controls */}
+            <div className="flex items-center justify-center gap-3 w-full sm:w-auto">
+              <button
+                disabled={lightboxIndex === 0}
+                onClick={() => setLightboxIndex(lightboxIndex - 1)}
+                className="px-4 py-2 rounded-xl bg-neutral-900 border border-neutral-800 disabled:opacity-40 text-xs font-semibold flex items-center gap-1 hover:bg-neutral-800"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Prev</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  togglePhotoSelection(activeEvent.id, filteredPhotos[lightboxIndex].id)
+                }
+                className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                  filteredPhotos[lightboxIndex].isSelected
+                    ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/50'
+                    : 'bg-neutral-800 hover:bg-neutral-700 text-white'
+                }`}
+              >
+                <Heart
+                  className={`w-4 h-4 ${
+                    filteredPhotos[lightboxIndex].isSelected ? 'fill-white' : ''
+                  }`}
+                />
+                <span>
+                  {filteredPhotos[lightboxIndex].isSelected ? 'Selected (❤️)' : 'Tap to Select (❤️)'}
+                </span>
+              </button>
+
+              <button
+                disabled={lightboxIndex === filteredPhotos.length - 1}
+                onClick={() => setLightboxIndex(lightboxIndex + 1)}
+                className="px-4 py-2 rounded-xl bg-neutral-900 border border-neutral-800 disabled:opacity-40 text-xs font-semibold flex items-center gap-1 hover:bg-neutral-800"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-[11px] text-neutral-400 font-mono text-center sm:text-right hidden sm:block">
+              Swipe or use Arrow Keys: Next/Prev • Space: Heart • Esc: Close
+            </div>
           </div>
         </div>
       )}
+
+      {/* Floating Bottom Bar for Mobile Phone Experience */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-neutral-950/95 backdrop-blur-xl border-t border-neutral-800 p-3 shadow-2xl flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center">
+            <Heart className="w-4 h-4 fill-rose-500" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-white font-mono">
+              {selectedCount} {maxLimit ? `/ ${maxLimit}` : ''} Selected
+            </div>
+            <div className="text-[10px] text-amber-300 font-mono">
+              ~{estimatedSheets} Sheets ({estimatedPages} Pages)
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setShowFinishModal(true)}
+          disabled={selectedCount === 0}
+          className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 font-extrabold text-xs rounded-xl shadow-lg disabled:opacity-50 flex items-center gap-1.5"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Finish & Submit</span>
+        </button>
+      </div>
 
       {/* Finish Selection Modal */}
       {showFinishModal && (
@@ -899,15 +950,6 @@ export const ClientGallery: React.FC = () => {
                 <span>Follow {photographer.studioInstagram}</span>
               </a>
             )}
-
-            <button
-              type="button"
-              onClick={() => setShowHeroWelcome(true)}
-              className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-amber-300 font-semibold text-xs rounded-xl flex items-center gap-2 transition-colors"
-            >
-              <Music className="w-3.5 h-3.5 text-amber-400" />
-              <span>Play Wedding Music & Story</span>
-            </button>
           </div>
 
           <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-400 pt-4 border-t border-neutral-900 font-mono">
@@ -916,14 +958,6 @@ export const ClientGallery: React.FC = () => {
           </div>
         </div>
       </footer>
-
-      {/* Romantic Hero Welcome Screen with Music & Story */}
-      <CoupleHeroWelcomeModal
-        isOpen={showHeroWelcome}
-        onClose={() => setShowHeroWelcome(false)}
-        event={activeEvent}
-        photographer={photographer}
-      />
     </div>
   );
 };

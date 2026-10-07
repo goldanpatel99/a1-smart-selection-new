@@ -197,7 +197,7 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({ isOpen, onClose 
               </div>
               <div>
                 <h2 className="text-2xl font-bold font-heading text-white">
-                  Buy Points
+                  Recharge Points
                 </h2>
                 <p className="text-xs text-neutral-400">
                   Instant point credit

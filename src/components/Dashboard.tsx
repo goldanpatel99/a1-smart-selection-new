@@ -225,8 +225,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 Aapka Balance: 0 Points
               </div>
               <p className="text-xs text-neutral-300 mt-0.5">
-                Naye photographers ka starting balance 0 points hota hai. Naya wedding event banane ke
-                liye ₹{adminSettings?.pricingPackages?.[0]?.priceRupees || 110} se points recharge karein ({(adminSettings?.pricingPackages || []).map((p) => `₹${p.priceRupees}`).join(' / ') || '₹110'}).
+                Naya wedding event banane ke liye recharge karein.
               </p>
             </div>
           </div>
@@ -234,7 +233,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             onClick={onOpenBuyPoints}
             className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow hover:scale-105 transition-all whitespace-nowrap self-start sm:self-auto"
           >
-            Buy Points (Starts @ ₹{adminSettings?.pricingPackages?.[0]?.priceRupees || 110})
+            Recharge Points
           </button>
         </div>
       )}
@@ -377,11 +376,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </h1>
           </div>
 
-          {/* 50-Day Cloud Storage Notice Line (Visible Only For Photographers) */}
+          {/* 1-Year Selection Record & Safe Storage Notice Line */}
           <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-neutral-900/90 border border-neutral-800 text-[11px] text-neutral-400 shadow-sm">
             <Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
             <span>
-              <strong className="text-neutral-200">50-Day Storage Policy:</strong> Uploaded event preview photos cloud par 50 din tak store rehti hain, uske baad server storage saving ke liye auto-clean kar di jaati hain (Client selection record aur .BAT script hamesha safe rehte hain).
+              <strong className="text-neutral-200">Storage Policy:</strong> Uploaded event preview photos cloud par 50 din tak store rehti hain. But Client ka selection 1 year tak safe save rahega.
             </span>
           </div>
 

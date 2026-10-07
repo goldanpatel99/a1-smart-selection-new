@@ -153,7 +153,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               Points Balance Is 0
             </h4>
             <p className="text-xs text-neutral-400 mb-4 max-w-sm mx-auto">
-              Aapke paas filhaal 0 points hain. Naye event banane ke liye ₹110 ka 1 point kharidein ya 20 points ka best value pack lein.
+              Naya wedding event banane ke liye recharge karein.
             </p>
             <button
               type="button"
@@ -164,7 +164,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               className="py-3 px-6 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 font-bold text-sm rounded-xl shadow-lg shadow-amber-500/20 hover:scale-105 transition-transform inline-flex items-center gap-2"
             >
               <Coins className="w-4 h-4" />
-              Recharge Points (Starts @ ₹110)
+              Recharge Points
             </button>
           </div>
         ) : (
@@ -219,39 +219,22 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-neutral-300 mb-1">
-                  Event Date
-                </label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-3 w-4 h-4 text-neutral-500" />
-                  <input
-                    type="date"
-                    value={eventDate}
-                    onChange={(e) => setEventDate(e.target.value)}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl pl-9 pr-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
-                  />
+            <div>
+              <label className="block text-xs font-semibold text-neutral-300 mb-1">
+                Selection Deadline
+              </label>
+              <div className="w-full bg-neutral-950 border border-amber-500/40 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                  <span className="text-sm font-bold text-amber-300 font-mono">6 Days</span>
+                  <span className="text-[10px] uppercase font-bold text-neutral-400 bg-neutral-900 border border-neutral-800 px-2 py-0.5 rounded">
+                    Strictly Automatic
+                  </span>
                 </div>
               </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-neutral-300 mb-1">
-                  Selection Deadline
-                </label>
-                <div className="w-full bg-neutral-950 border border-amber-500/40 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                    <span className="text-sm font-bold text-amber-300 font-mono">6 Days</span>
-                    <span className="text-[10px] uppercase font-bold text-neutral-400 bg-neutral-900 border border-neutral-800 px-2 py-0.5 rounded">
-                      Strictly Automatic
-                    </span>
-                  </div>
-                </div>
-                <p className="text-[10px] text-neutral-500 mt-1">
-                  Auto 6 days set. Baad mein extend karne ke liye +6 days ka 1 point lagega.
-                </p>
-              </div>
+              <p className="text-[10px] text-neutral-500 mt-1">
+                Auto 6 days set. Baad mein extend karne ke liye +6 days ka 1 point lagega.
+              </p>
             </div>
 
             {/* Selection Limit (Album quota) */}

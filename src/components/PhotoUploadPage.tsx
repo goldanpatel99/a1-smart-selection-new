@@ -294,9 +294,9 @@ export const PhotoUploadPage: React.FC = () => {
     // STRICT CHECK: Disallow direct loose photo uploads!
     if (!hasDirectories && looseFileCount > 0) {
       setLooseFileWarning(
-        `⚠️ Loose photos upload direct allow nahi hai (${looseFileCount} files dropped)! Kripya poora FOLDER drag & drop karein (e.g. 'Haldi', 'Reception' folder) taaki final .bat file same folder name se photos copy kar sake.`
+        `⚠️ Single photos upload direct allow nahi hai (${looseFileCount} files dropped)! Kripya poora FOLDER drag & drop karein (e.g. 'Haldi', 'Reception' folder) taaki exact folder structure save ho sake.`
       );
-      showToast('Loose photos upload is blocked. Please drop a folder!', 'error');
+      showToast('Single photos upload is blocked. Please drop a folder!', 'error');
       return;
     }
 
@@ -385,19 +385,26 @@ export const PhotoUploadPage: React.FC = () => {
         </div>
       </div>
 
-      {/* STRICT RULE CALLOUT BANNER */}
-      <div className="mt-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start sm:items-center gap-3.5 text-xs text-amber-200">
-        <div className="w-8 h-8 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400 flex-shrink-0">
-          <FolderCheck className="w-5 h-5" />
+      {/* 3 STRICT UPLOAD RULES CALLOUT BANNER */}
+      <div className="mt-6 p-4.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200">
+        <div className="flex items-center gap-2 mb-2.5 font-bold text-amber-300 text-sm">
+          <FolderCheck className="w-4 h-4 text-amber-400" />
+          <span>Upload Guidelines:</span>
         </div>
-        <div className="leading-relaxed">
-          <span className="font-bold text-amber-300">Folder-Only Upload Policy:</span> Yahan loose
-          photos upload nahi hoti hain. Aapko apne computer se seedha{' '}
-          <span className="font-bold text-white underline">Folder (e.g., 'Haldi', 'Reception')</span>{' '}
-          select ya drop karna hai. Isse system exact folder name save karta hai aur final{' '}
-          <span className="font-mono font-bold text-white">.bat</span> file bina kisi dikkat ke exact
-          folder name se photos copy karti hai!
-        </div>
+        <ol className="space-y-1.5 text-neutral-200 font-medium">
+          <li className="flex items-start gap-2">
+            <span className="font-bold text-amber-400">1.</span>
+            <span>Yahan pe direct photos ka folder hi upload karna hai, single-single photos nahi.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="font-bold text-amber-400">2.</span>
+            <span>Folder ke andar koi aur sub-folder nahi hona chahiye.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="font-bold text-amber-400">3.</span>
+            <span>Folder upload hone ke baad koi file name change nahi karna hai.</span>
+          </li>
+        </ol>
       </div>
 
       {/* Loose File Warning Banner if triggered */}
@@ -567,7 +574,7 @@ export const PhotoUploadPage: React.FC = () => {
               yahan drop karein ya select karein.
             </p>
             <p className="text-[11px] text-neutral-400 font-medium mb-6">
-              Folder name automatically detect hota hai taaki final .bat script 100% accurate file copy kare.
+              Folder name automatically detect hota hai taaki final auto-copy script 100% accurate photos organize kare.
             </p>
 
             {/* Folder Select Action Button */}

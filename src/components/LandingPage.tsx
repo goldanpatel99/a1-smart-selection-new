@@ -203,7 +203,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                 <span>
-                  {adminSettings.pointsPerEvent || 1} Event = {adminSettings.pointsPerEvent || 1} Point (Starts @ ₹{minStartingRate})
+                  {adminSettings.pointsPerEvent || 1} Event = {adminSettings.pointsPerEvent || 1} Point
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -236,7 +236,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 shadow"
                 >
                   <Terminal className="w-3.5 h-3.5" />
-                  Test .BAT Download
+                  Test Auto-Copy Demo
                 </button>
               </div>
             </div>
@@ -381,16 +381,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </p>
             </div>
 
-            {/* 6. 1-Click .BAT Sorting File */}
+            {/* 6. 1-Click Auto Copy System */}
             <div className="p-6 rounded-3xl bg-neutral-900/80 border border-neutral-800 hover:border-amber-500/50 transition-all hover:scale-[1.02] group shadow-lg">
               <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-4 group-hover:rotate-6 transition-transform">
                 <Terminal className="w-6 h-6" />
               </div>
               <h3 className="text-base font-bold text-white font-heading">
-                1-Click .BAT Auto Copier
+                1-Click Auto Copier
               </h3>
               <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
-                Client submit karte hi automatic .BAT file milti hai. Double click karte hi selected photos second bhar mein alag folder mein copy ho jaati hain.
+                Client submit karte hi instant auto-copy script milti hai. Double click karte hi selected photos second bhar mein alag folder mein copy ho jaati hain.
               </p>
             </div>
 
@@ -483,11 +483,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 03
               </div>
               <h3 className="text-lg font-bold text-white mb-2 font-heading">
-                Double Click .BAT Script
+                Instant 1-Click Copy
               </h3>
               <p className="text-xs text-neutral-400 leading-relaxed mb-4">
                 Client jaise hi finish karta hai, photographer ko notification milta hai. Photographer
-                1 click mein .bat file download karta hai, original photos wale folder mein daal kar
+                1 click mein automated copy script download karta hai, original photos wale folder mein daal kar
                 double-click karta hai, aur sabhi selected photos automatically alag folder mein copy ho jaati hain!
               </p>
               <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
@@ -578,7 +578,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                      <span>Automated .BAT & .SH script download</span>
+                      <span>Automated 1-Click copy script & Lightroom export</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
@@ -660,11 +660,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             <div className="p-5 bg-neutral-900 border border-neutral-800 rounded-2xl">
               <h4 className="text-sm font-bold text-white mb-2">
-                2. .BAT file kaise kaam karti hai?
+                2. Auto-copy script kaise kaam karti hai?
               </h4>
               <p className="text-xs text-neutral-400 leading-relaxed">
-                Jab client selection complete kar leta hai, toh aapko ek choti .bat file milti hai.
-                Aap us file ko apne original photos wale folder mein daalte hain aur double-click karte hain.
+                Jab client selection complete kar leta hai, toh aapko ek instant automated script milti hai.
+                Aap us script ko apne original photos wale folder mein daalte hain aur double-click karte hain.
                 Wo script automatically selected photo filenames dhoondhti hai aur unhe "Selected_Photos"
                 folder mein copy kar deti hai. 2 ghante ka manual selection kaam 5 second mein ho jaata hai!
               </p>
@@ -710,7 +710,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </span>
               </div>
               <p className="text-neutral-400 text-xs leading-relaxed">
-                India's fastest wedding photo selection & automatic .BAT sorting platform for professional photographers.
+                India's fastest wedding photo selection & automated sorting platform for professional photographers.
               </p>
               <div className="pt-2">
                 <div className="text-[11px] text-neutral-500 uppercase tracking-wider font-semibold">
