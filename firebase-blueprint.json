@@ -16,6 +16,9 @@
         "watermarkText": { "type": "string" },
         "watermarkPosition": { "type": "string" },
         "watermarkOpacity": { "type": "number" },
+        "isBlocked": { "type": "boolean" },
+        "blockedAt": { "type": "string" },
+        "blockedReason": { "type": "string" },
         "createdAt": { "type": "string" }
       },
       "required": ["id", "email", "role", "studioName", "points"]

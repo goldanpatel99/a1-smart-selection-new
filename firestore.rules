@@ -21,8 +21,8 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if true;
       allow create: if true;
-      allow update: if isOwner(userId) || isAdmin() || true;
-      allow delete: if isAdmin();
+      allow update: if true;
+      allow delete: if true;
     }
 
     // Wedding Events Collection

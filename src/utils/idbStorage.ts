@@ -79,4 +79,19 @@ export const idbStorage = {
       console.warn('IDB delete error:', e);
     }
   },
+
+  async clearAll(): Promise<void> {
+    try {
+      const db = await getDB();
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.clear();
+      return new Promise((resolve) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    } catch (e) {
+      console.warn('IDB clearAll error:', e);
+    }
+  },
 };

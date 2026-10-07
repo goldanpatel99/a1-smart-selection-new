@@ -64,6 +64,9 @@ interface AppContextType {
   adminResetPassword: (userId: string, customPass?: string) => string;
   adminUpdateSettings: (newSettings: AdminSettings) => void;
   adminUpdateOwnCredentials: (newEmail: string, newPassword: string) => boolean;
+  adminToggleBlockPhotographer: (userId: string, reason?: string) => void;
+  adminDeletePhotographer: (userId: string) => Promise<void>;
+  adminResetAllStoredData: () => Promise<void>;
 
   // Events
   createEvent: (data: {
@@ -174,21 +177,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const unsubUsers = firebaseService.subscribeUsers((cloudUsers) => {
-      setUsers((prev) => {
-        const map = new Map<string, User>();
-        prev.forEach((u) => map.set(u.id, u));
-        cloudUsers.forEach((u) => map.set(u.id, u));
-        return Array.from(map.values());
-      });
+      if (cloudUsers && cloudUsers.length > 0) {
+        setUsers(cloudUsers);
+      }
     });
 
     const unsubTransactions = firebaseService.subscribeTransactions((cloudTxs) => {
-      setTransactions((prev) => {
-        const map = new Map<string, PointTransaction>();
-        prev.forEach((t) => map.set(t.id, t));
-        cloudTxs.forEach((t) => map.set(t.id, t));
-        return Array.from(map.values());
-      });
+      setTransactions(cloudTxs || []);
     });
 
     const unsubSettings = firebaseService.subscribeSettings((cloudSettings) => {
@@ -332,6 +327,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (user) {
+      if (user.isBlocked) {
+        showToast(
+          user.blockedReason ||
+            'Aapka photographer account admin dwara temporarily block kar diya gaya hai. Kripya admin se contact karein.',
+          'error'
+        );
+        return false;
+      }
+
       if (password && user.password && user.password !== password) {
         // Master password checks for Admin
         const isMasterAdminPass =
@@ -525,6 +529,116 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     firebaseService.saveUser(updatedAdmin);
     showToast('Admin credentials updated! You can now log in with your new ID and Password.', 'success');
     return true;
+  };
+
+  const adminToggleBlockPhotographer = (userId: string, reason?: string) => {
+    const targetUser = users.find((u) => u.id === userId);
+    if (!targetUser) return;
+    if (targetUser.role === 'admin') {
+      showToast('Admin account block nahi kiya ja sakta!', 'error');
+      return;
+    }
+
+    const nextBlocked = !targetUser.isBlocked;
+    const updatedUser: User = {
+      ...targetUser,
+      isBlocked: nextBlocked,
+      blockedAt: nextBlocked ? new Date().toISOString() : undefined,
+      blockedReason: nextBlocked
+        ? (reason?.trim() || 'Aapka photographer account admin dwara temporarily block kar diya gaya hai. Kripya admin se contact karein.')
+        : undefined,
+    };
+
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+    storage.saveUsers(users.map((u) => (u.id === userId ? updatedUser : u)));
+    firebaseService.saveUser(updatedUser);
+
+    if (nextBlocked && currentUserId === userId) {
+      logout();
+      showToast('Aapka account admin dwara temporarily block kar diya gaya hai.', 'error');
+    } else {
+      showToast(
+        nextBlocked
+          ? `${targetUser.studioName} (${targetUser.name}) ko temporarily BLOCK kar diya gaya hai.`
+          : `${targetUser.studioName} (${targetUser.name}) ko UNBLOCK kar diya gaya hai. Ab wo login kar sakte hain.`,
+        nextBlocked ? 'info' : 'success'
+      );
+    }
+  };
+
+  const adminDeletePhotographer = async (userId: string) => {
+    const targetUser = users.find((u) => u.id === userId);
+    if (!targetUser) return;
+    if (targetUser.role === 'admin') {
+      showToast('Admin account delete nahi kiya ja sakta!', 'error');
+      return;
+    }
+
+    // 1. Delete user from local state, storage, and Firestore
+    const nextUsers = users.filter((u) => u.id !== userId);
+    setUsers(nextUsers);
+    storage.saveUsers(nextUsers);
+    await firebaseService.deleteUser(userId);
+
+    // 2. Remove all events belonging to this photographer
+    const photographerEvents = events.filter((e) => e.photographerId === userId);
+    for (const evt of photographerEvents) {
+      await firebaseService.deleteEvent(evt.id);
+      await idbStorage.deleteEventPhotos(evt.id);
+    }
+    const nextEvents = events.filter((e) => e.photographerId !== userId);
+    setEvents(nextEvents);
+    storage.saveEvents(nextEvents);
+
+    // 3. If currently logged in as this user, log out
+    if (currentUserId === userId) {
+      logout();
+    }
+
+    showToast(`${targetUser.studioName} (${targetUser.name}) ka account aur events permanently delete kar diye gaye.`, 'success');
+  };
+
+  const adminResetAllStoredData = async () => {
+    try {
+      // 1. Reset Firestore data
+      await firebaseService.resetAllData();
+
+      // 2. Clear localStorage and IndexedDB
+      storage.resetAllData();
+      await idbStorage.clearAll();
+
+      // 3. Reset in-memory state to pristine admin-only setup
+      const freshAdminUser: User = {
+        id: 'user-admin-main',
+        name: 'Admin',
+        email: 'admin@a1smartselection.com',
+        phone: '+91 7970641503',
+        password: 'admin',
+        studioName: 'A1 Smart Selection Admin HQ',
+        role: 'admin',
+        points: 999,
+        createdAt: new Date().toISOString(),
+        watermarkText: 'A1 SMART SELECTION',
+        watermarkPosition: 'bottom-right',
+        watermarkOpacity: 0.35,
+        defaultPhotosPerSheet: 6,
+      };
+
+      setUsers([freshAdminUser]);
+      setEvents([]);
+      setTransactions([]);
+      storage.saveUsers([freshAdminUser]);
+      storage.saveEvents([]);
+      storage.saveTransactions([]);
+      storage.setCurrentUserId('user-admin-main');
+      setCurrentUserId('user-admin-main');
+
+      showToast('Sara testing/stored data successfully wipe & reset kar diya gaya hai! Ab direct real photographers ke liye brand-new clean state ready hai.', 'success');
+      navigateTo('admin-panel');
+    } catch (err) {
+      console.error('Reset error:', err);
+      showToast('Reset ke dauran error aaya. Kripya dobara try karein.', 'error');
+    }
   };
 
   const createEvent = (data: {
@@ -945,6 +1059,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         adminResetPassword,
         adminUpdateSettings,
         adminUpdateOwnCredentials,
+        adminToggleBlockPhotographer,
+        adminDeletePhotographer,
+        adminResetAllStoredData,
         createEvent,
         extendDeadline,
         updateEvent,

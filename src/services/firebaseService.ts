@@ -251,6 +251,58 @@ export const firebaseService = {
     }
   },
 
+  deleteUser: async (userId: string) => {
+    try {
+      await deleteDoc(doc(db, 'users', userId));
+    } catch (err) {
+      console.warn('Error deleting user from Firestore:', err);
+    }
+  },
+
+  // Reset all stored events, subcollections, transactions, and test photographers
+  resetAllData: async () => {
+    try {
+      // 1. Delete all events and their photo subcollections
+      const eventsSnap = await getDocs(collection(db, 'events'));
+      for (const evt of eventsSnap.docs) {
+        try {
+          const photosSnap = await getDocs(collection(db, 'events', evt.id, 'photos'));
+          for (const p of photosSnap.docs) {
+            await deleteDoc(p.ref);
+          }
+          await deleteDoc(evt.ref);
+        } catch (innerErr) {
+          console.warn('Error deleting event document during reset:', innerErr);
+        }
+      }
+
+      // 2. Delete all transactions
+      const txSnap = await getDocs(collection(db, 'transactions'));
+      for (const t of txSnap.docs) {
+        try {
+          await deleteDoc(t.ref);
+        } catch (innerErr) {
+          console.warn('Error deleting transaction during reset:', innerErr);
+        }
+      }
+
+      // 3. Delete non-admin users
+      const usersSnap = await getDocs(collection(db, 'users'));
+      for (const u of usersSnap.docs) {
+        try {
+          const data = u.data() as User;
+          if (data.role !== 'admin' || u.id !== 'user-admin-main') {
+            await deleteDoc(u.ref);
+          }
+        } catch (innerErr) {
+          console.warn('Error deleting user during reset:', innerErr);
+        }
+      }
+    } catch (err) {
+      console.warn('Error in firebaseService.resetAllData:', err);
+    }
+  },
+
   // --- TRANSACTIONS ---
   subscribeTransactions: (onUpdate: (txs: PointTransaction[]) => void) => {
     try {

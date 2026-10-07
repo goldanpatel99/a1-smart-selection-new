@@ -62,6 +62,9 @@ export interface User {
   role: 'photographer' | 'admin';
   points: number; // starts at 0 for new photographers
   createdAt: string;
+  isBlocked?: boolean; // Admin can temporarily block access
+  blockedAt?: string;
+  blockedReason?: string;
   watermarkText?: string;
   watermarkPosition?: 'center' | 'bottom-right' | 'bottom-left' | 'top-right';
   watermarkOpacity?: number;

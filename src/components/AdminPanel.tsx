@@ -25,6 +25,10 @@ import {
   HardDrive,
   Cloud,
   Database,
+  Ban,
+  UserCheck,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { User, AdminSettings } from '../types';
 
@@ -38,6 +42,9 @@ export const AdminPanel: React.FC = () => {
     adminResetPassword,
     adminUpdateSettings,
     adminUpdateOwnCredentials,
+    adminToggleBlockPhotographer,
+    adminDeletePhotographer,
+    adminResetAllStoredData,
     runStorageAutoClean,
     navigateTo,
     showToast,
@@ -49,6 +56,16 @@ export const AdminPanel: React.FC = () => {
   const [selectedUserForPoints, setSelectedUserForPoints] = useState<User | null>(null);
   const [pointsAdjustment, setPointsAdjustment] = useState<number>(5);
   const [adjustmentReason, setAdjustmentReason] = useState<string>('Free Welcome Grant');
+
+  // Block & Delete photographer states
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const [userToBlock, setUserToBlock] = useState<User | null>(null);
+  const [blockReasonInput, setBlockReasonInput] = useState('');
+
+  // Reset all stored testing data state
+  const [showResetDataModal, setShowResetDataModal] = useState(false);
+  const [isResettingData, setIsResettingData] = useState(false);
 
   // Reset password & credentials management
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
@@ -72,6 +89,34 @@ export const AdminPanel: React.FC = () => {
     const ok = adminUpdateOwnCredentials(adminEmailInput.trim(), adminPassInput.trim());
     if (ok) {
       setShowAdminCredsModal(false);
+    }
+  };
+
+  const handleConfirmBlock = () => {
+    if (!userToBlock) return;
+    adminToggleBlockPhotographer(userToBlock.id, blockReasonInput);
+    setUserToBlock(null);
+    setBlockReasonInput('');
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!userToDelete) return;
+    setIsDeletingUser(true);
+    try {
+      await adminDeletePhotographer(userToDelete.id);
+      setUserToDelete(null);
+    } finally {
+      setIsDeletingUser(false);
+    }
+  };
+
+  const handleConfirmResetData = async () => {
+    setIsResettingData(true);
+    try {
+      await adminResetAllStoredData();
+      setShowResetDataModal(false);
+    } finally {
+      setIsResettingData(false);
     }
   };
 
@@ -204,6 +249,15 @@ export const AdminPanel: React.FC = () => {
           >
             <Key className="w-3.5 h-3.5" />
             <span>Modify Admin ID & Pass</span>
+          </button>
+
+          <button
+            onClick={() => setShowResetDataModal(true)}
+            className="px-3.5 py-2 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            title="Wipe and reset all test data to start fresh"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+            <span>Reset Stored Test Data</span>
           </button>
 
           <button
@@ -416,10 +470,28 @@ export const AdminPanel: React.FC = () => {
                     return (
                       <tr key={user.id} className="hover:bg-neutral-800/40 transition-colors">
                         <td className="py-4">
-                          <div className="font-bold text-white text-sm">{user.name}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-bold text-white text-sm">{user.name}</div>
+                            {user.isBlocked ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold">
+                                <Ban className="w-3 h-3 text-rose-400" />
+                                <span>Blocked</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                <span>Active</span>
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs text-amber-400 font-medium">
                             {user.studioName}
                           </div>
+                          {user.isBlocked && user.blockedReason && (
+                            <div className="text-[10px] text-rose-400/90 italic mt-0.5 max-w-xs">
+                              Reason: {user.blockedReason}
+                            </div>
+                          )}
                         </td>
 
                         {/* Login ID & Password (Credentials) */}
@@ -508,22 +580,59 @@ export const AdminPanel: React.FC = () => {
                           {new Date(user.createdAt).toLocaleDateString()}
                         </td>
                         <td className="py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
                             <button
                               onClick={() => setSelectedUserForPoints(user)}
-                              className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold rounded-xl text-xs flex items-center gap-1 transition-colors"
+                              className="px-2.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold rounded-xl text-xs flex items-center gap-1 transition-colors"
+                              title="Add or Deduct Points"
                             >
                               <Coins className="w-3.5 h-3.5" />
-                              <span>Add / Edit Points</span>
+                              <span>Points</span>
                             </button>
 
                             <button
                               onClick={() => handleOpenPasswordModal(user)}
-                              className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white rounded-xl text-xs flex items-center gap-1 font-semibold transition-colors border border-neutral-700"
+                              className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white rounded-xl text-xs flex items-center gap-1 font-semibold transition-colors border border-neutral-700"
                               title="View & Edit Password"
                             >
                               <Key className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Reset / Edit Pass</span>
+                              <span>Pass</span>
+                            </button>
+
+                            {/* Temporary Block / Unblock Button */}
+                            <button
+                              onClick={() => {
+                                setUserToBlock(user);
+                                setBlockReasonInput(user.blockedReason || '');
+                              }}
+                              className={`px-2.5 py-1.5 rounded-xl text-xs flex items-center gap-1 font-bold transition-colors border ${
+                                user.isBlocked
+                                  ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
+                                  : 'bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border-amber-600/40'
+                              }`}
+                              title={user.isBlocked ? 'Click to Unblock Photographer' : 'Click to Temporarily Block Photographer'}
+                            >
+                              {user.isBlocked ? (
+                                <>
+                                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>Unblock</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Ban className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>Block</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Permanent Delete Button */}
+                            <button
+                              onClick={() => setUserToDelete(user)}
+                              className="px-2.5 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 rounded-xl text-xs flex items-center gap-1 font-bold transition-colors border border-rose-500/30"
+                              title="Permanently Delete Photographer and all associated data"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                              <span>Delete</span>
                             </button>
                           </div>
                         </td>
@@ -1077,6 +1186,225 @@ export const AdminPanel: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Temporary Block / Unblock Confirmation Modal */}
+      {userToBlock && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-3xl p-6 sm:p-7 shadow-2xl overflow-hidden">
+            <div className="flex items-center gap-3 mb-4">
+              <div
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+                  userToBlock.isBlocked
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                }`}
+              >
+                {userToBlock.isBlocked ? (
+                  <UserCheck className="w-5 h-5" />
+                ) : (
+                  <Ban className="w-5 h-5" />
+                )}
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white font-heading">
+                  {userToBlock.isBlocked
+                    ? 'Unblock Photographer Account'
+                    : 'Temporarily Block Photographer'}
+                </h3>
+                <span className="text-xs text-neutral-400">
+                  {userToBlock.studioName} ({userToBlock.name})
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-neutral-300 leading-relaxed mb-4">
+              {userToBlock.isBlocked
+                ? 'Kya aap is photographer ko unblock karna chahte hain? Unblock hone ke baad ye photographer turant studio login kar sakega.'
+                : 'Account block karne par photographer studio login nahi kar payega. Aap kabhi bhi yahan se wapas unblock kar sakte hain.'}
+            </p>
+
+            {!userToBlock.isBlocked && (
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
+                  Block Reason (Optional - Visible to Photographer on login attempt)
+                </label>
+                <input
+                  type="text"
+                  value={blockReasonInput}
+                  onChange={(e) => setBlockReasonInput(e.target.value)}
+                  placeholder="e.g. Account verification required / Please contact admin"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setUserToBlock(null);
+                  setBlockReasonInput('');
+                }}
+                className="px-4 py-2.5 rounded-xl border border-neutral-800 text-xs font-semibold text-neutral-400 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBlock}
+                className={`px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg transition-all flex items-center gap-1.5 ${
+                  userToBlock.isBlocked
+                    ? 'bg-emerald-500 hover:bg-emerald-400 text-neutral-950 shadow-emerald-500/20'
+                    : 'bg-amber-500 hover:bg-amber-400 text-neutral-950 shadow-amber-500/20'
+                }`}
+              >
+                {userToBlock.isBlocked ? (
+                  <>
+                    <UserCheck className="w-4 h-4" />
+                    <span>Confirm Unblock</span>
+                  </>
+                ) : (
+                  <>
+                    <Ban className="w-4 h-4" />
+                    <span>Confirm Block</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permanent Delete Photographer Confirmation Modal */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-md bg-neutral-900 border border-rose-500/40 rounded-3xl p-6 sm:p-7 shadow-2xl overflow-hidden">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white font-heading">
+                  Permanently Delete Photographer?
+                </h3>
+                <span className="text-[10px] text-rose-400 font-mono">
+                  DANGER • IRREVERSIBLE ACTION
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-neutral-950 p-3 rounded-2xl border border-neutral-800 space-y-1 mb-4 text-xs font-mono">
+              <div className="text-white font-bold">{userToDelete.name}</div>
+              <div className="text-amber-400">{userToDelete.studioName}</div>
+              <div className="text-neutral-400 text-[11px]">{userToDelete.email}</div>
+              <div className="text-neutral-500 text-[11px]">
+                Events: {events.filter((e) => e.photographerId === userToDelete.id).length} | Points: {userToDelete.points}
+              </div>
+            </div>
+
+            <p className="text-xs text-rose-300/90 leading-relaxed mb-5">
+              ⚠️ Warning: Is photographer ka account, login access, aur iske sabhi wedding events permanently delete ho jayenge. Yeh action irreversible hai aur data wapas recover nahi hoga.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                disabled={isDeletingUser}
+                onClick={() => setUserToDelete(null)}
+                className="px-4 py-2.5 rounded-xl border border-neutral-800 text-xs font-semibold text-neutral-400 hover:text-white disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingUser}
+                onClick={handleConfirmDelete}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-600/30 transition-all flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingUser ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Yes, Permanently Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Super Admin Wipe All Testing Data Modal */}
+      {showResetDataModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-lg bg-neutral-900 border border-rose-500/40 rounded-3xl p-6 sm:p-7 shadow-2xl overflow-hidden">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+                <RotateCcw className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white font-heading">
+                  Reset All Stored Test Data & Storage
+                </h3>
+                <span className="text-[10px] text-amber-400 font-mono font-bold">
+                  CLEAN SLATE FOR REAL PRODUCTION PHOTOGRAPHERS
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 text-xs text-neutral-300 leading-relaxed mb-5">
+              <p>
+                Yeh action testing purpose ke dauran banaye gaye sabhi test data ko complete wipe kar dega:
+              </p>
+              <ul className="list-disc pl-5 space-y-1 text-neutral-400">
+                <li>Sabhi sample/testing wedding events aur galleries delete ho jayengi</li>
+                <li>Sabhi uploaded test photo previews storage se remove ho jayenge</li>
+                <li>Sabhi dummy/testing photographer accounts remove ho jayenge</li>
+                <li>Testing point recharge transactions wipe ho jayenge</li>
+                <li className="text-emerald-400 font-semibold">
+                  Aapka Admin Account bilkul secure rahega aur login chalta rahega
+                </li>
+              </ul>
+              <p className="text-[11px] text-neutral-500 italic pt-1">
+                Iske baad website 100% brand-new ho jayegi taaki naye real photographers ka personal account fresh 0 points ke sath register kar sakein.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-neutral-800">
+              <button
+                type="button"
+                disabled={isResettingData}
+                onClick={() => setShowResetDataModal(false)}
+                className="px-4 py-2.5 rounded-xl border border-neutral-800 text-xs font-semibold text-neutral-400 hover:text-white disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isResettingData}
+                onClick={handleConfirmResetData}
+                className="px-5 py-2.5 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-600/30 transition-all flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isResettingData ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Resetting System Data...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Wipe & Reset Everything Now</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

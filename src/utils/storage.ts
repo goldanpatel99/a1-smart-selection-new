@@ -2,11 +2,11 @@ import { WeddingEvent, User, PointTransaction, AdminSettings } from '../types';
 import { INITIAL_ADMIN_SETTINGS, INITIAL_USERS, INITIAL_EVENTS, INITIAL_TRANSACTIONS } from './mockData';
 
 const STORAGE_KEYS = {
-  USERS: 'a1_users_v5',
-  CURRENT_USER_ID: 'a1_current_user_id_v5',
-  EVENTS: 'a1_events_v5',
-  TRANSACTIONS: 'a1_transactions_v5',
-  SETTINGS: 'a1_settings_v5',
+  USERS: 'a1_users_v6',
+  CURRENT_USER_ID: 'a1_current_user_id_v6',
+  EVENTS: 'a1_events_v6',
+  TRANSACTIONS: 'a1_transactions_v6',
+  SETTINGS: 'a1_settings_v6',
 };
 
 // Cleanup older versions and dummy data
@@ -15,7 +15,8 @@ try {
     'a1_events_v1', 'a1_transactions_v1', 'a1_users_v1',
     'a1_events_v2', 'a1_transactions_v2', 'a1_users_v2', 'a1_current_user_id_v2',
     'a1_events_v3', 'a1_transactions_v3', 'a1_users_v3', 'a1_current_user_id_v3',
-    'a1_events_v4', 'a1_transactions_v4', 'a1_users_v4', 'a1_current_user_id_v4'
+    'a1_events_v4', 'a1_transactions_v4', 'a1_users_v4', 'a1_current_user_id_v4',
+    'a1_events_v5', 'a1_transactions_v5', 'a1_users_v5', 'a1_current_user_id_v5', 'a1_settings_v5'
   ].forEach((key) => {
     localStorage.removeItem(key);
   });
