@@ -63,6 +63,7 @@ interface AppContextType {
   adminAddPoints: (userId: string, points: number, reason: string) => void;
   adminResetPassword: (userId: string, customPass?: string) => string;
   adminUpdateSettings: (newSettings: AdminSettings) => void;
+  adminUpdateOwnCredentials: (newEmail: string, newPassword: string) => boolean;
 
   // Events
   createEvent: (data: {
@@ -150,11 +151,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         prev.forEach((e) => prevMap.set(e.id, e));
         return cloudEvents.map((ce) => {
           const existing = prevMap.get(ce.id);
+          const existingPhotos = existing?.photos || [];
+          const cePhotos = ce.photos || [];
+          const finalPhotos = existingPhotos.length > 0 ? existingPhotos : cePhotos;
+          const finalFolders = (ce.folders && ce.folders.length > 0)
+            ? ce.folders
+            : (existing?.folders && existing.folders.length > 0)
+            ? existing.folders
+            : [
+                { id: 'f1', name: 'Highlights', eventId: ce.id, order: 0, visible: true },
+                { id: 'f2', name: 'Ceremony', eventId: ce.id, order: 1, visible: true },
+              ];
+
           return {
             ...ce,
-            // Preserve in-memory photos if already loaded, avoiding empty cloud overwrite
-            photos: existing && existing.photos.length > 0 ? existing.photos : ce.photos || [],
-            photosCount: ce.photosCount ?? (existing?.photos.length || 0),
+            folders: finalFolders,
+            photos: finalPhotos,
+            photosCount: ce.photosCount ?? finalPhotos.length,
           };
         });
       });
@@ -201,7 +214,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (cached && cached.length > 0) {
         setEvents((prev) =>
           prev.map((e) =>
-            e.id === activeEventId && e.photos.length === 0
+            e.id === activeEventId && (!e.photos || e.photos.length === 0)
               ? {
                   ...e,
                   photos: cached,
@@ -308,14 +321,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     // Find user by primary email or admin master aliases
     let user = users.find((u) => u.email.toLowerCase() === cleanEmail);
-    if (!user && (cleanEmail === 'goldanpatel99@gmail.com' || cleanEmail === 'admin@nepoliancinematicstudio.com' || cleanEmail === 'admin')) {
+    if (
+      !user &&
+      (cleanEmail === 'admin@a1smartselection.com' ||
+        cleanEmail === 'admin' ||
+        cleanEmail === 'goldanpatel99@gmail.com' ||
+        cleanEmail === 'admin@nepoliancinematicstudio.com')
+    ) {
       user = users.find((u) => u.role === 'admin') || users[0];
     }
 
     if (user) {
       if (password && user.password && user.password !== password) {
-        // Master password checks for Goldan Patel / Admin
-        const isMasterAdminPass = user.role === 'admin' && (password === 'admin@nepolian' || password === 'goldan@studio' || password === 'admin123');
+        // Master password checks for Admin
+        const isMasterAdminPass =
+          user.role === 'admin' &&
+          (password === 'admin' ||
+            password === 'admin@nepolian' ||
+            password === 'goldan@studio' ||
+            password === 'admin123' ||
+            password === 'Admin@2026');
         if (!isMasterAdminPass) {
           showToast('Galat password! Kripya sahi password enter karein.', 'error');
           return false;
@@ -483,6 +508,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Admin settings & pricing updated!', 'success');
   };
 
+  const adminUpdateOwnCredentials = (newEmail: string, newPass: string): boolean => {
+    const adminUser = users.find((u) => u.role === 'admin') || currentUser;
+    if (!adminUser) {
+      showToast('Admin account not found!', 'error');
+      return false;
+    }
+
+    const updatedAdmin: User = {
+      ...adminUser,
+      email: newEmail.trim(),
+      password: newPass.trim(),
+    };
+
+    setUsers((prev) => prev.map((u) => (u.id === adminUser.id ? updatedAdmin : u)));
+    firebaseService.saveUser(updatedAdmin);
+    showToast('Admin credentials updated! You can now log in with your new ID and Password.', 'success');
+    return true;
+  };
+
   const createEvent = (data: {
     title: string;
     coupleName: string;
@@ -630,13 +674,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
+        const currentFolders = e.folders || [];
         const newFolder: PhotoFolder = {
           id: `fld-${Date.now()}`,
           name: folderName.trim(),
           visible: true,
-          order: e.folders.length,
+          order: currentFolders.length,
         };
-        const updated = { ...e, folders: [...e.folders, newFolder] };
+        const updated = { ...e, folders: [...currentFolders, newFolder] };
         firebaseService.saveEvent(updated);
         return updated;
       })
@@ -648,15 +693,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
-        const deletedPhotos = e.photos.filter((p) => p.folderId === folderId);
+        const currentPhotos = e.photos || [];
+        const currentFolders = e.folders || [];
+        const deletedPhotos = currentPhotos.filter((p) => p.folderId === folderId);
         deletedPhotos.forEach((p) => {
           firebaseService.deletePhoto(eventId, p.id);
           idbStorage.deleteEventPhotos(eventId, p.id);
         });
         const updated = {
           ...e,
-          folders: e.folders.filter((f) => f.id !== folderId),
-          photos: e.photos.filter((p) => p.folderId !== folderId),
+          folders: currentFolders.filter((f) => f.id !== folderId),
+          photos: currentPhotos.filter((p) => p.folderId !== folderId),
         };
         firebaseService.saveEvent(updated);
         return updated;
@@ -669,9 +716,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
+        const currentFolders = e.folders || [];
         const updated = {
           ...e,
-          folders: e.folders.map((f) =>
+          folders: currentFolders.map((f) =>
             f.id === folderId ? { ...f, visible: !f.visible } : f
           ),
         };
@@ -692,7 +740,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((e) => {
         if (e.id !== eventId) return e;
 
-        const existingFolders = [...e.folders];
+        const existingFolders = [...(e.folders || [])];
+        const currentPhotos = e.photos || [];
         const folderNameToIdMap = new Map<string, string>();
         existingFolders.forEach((f) => folderNameToIdMap.set(f.name.toLowerCase(), f.id));
 
@@ -725,7 +774,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         });
 
-        const updatedPhotos = [...e.photos, ...formattedPhotos];
+        const updatedPhotos = [...currentPhotos, ...formattedPhotos];
         const coverPhoto = e.coverPhotoUrl || (updatedPhotos.length > 0 ? updatedPhotos[0].url : undefined);
 
         const updatedEvent: WeddingEvent = {
@@ -756,7 +805,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
-        const updatedPhotos = e.photos.filter((p) => p.id !== photoId);
+        const currentPhotos = e.photos || [];
+        const updatedPhotos = currentPhotos.filter((p) => p.id !== photoId);
         return {
           ...e,
           photos: updatedPhotos,
@@ -774,8 +824,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((e) => {
         if (e.id !== eventId) return e;
 
-        const currentSelectedCount = e.photos.filter((p) => p.isSelected).length;
-        const targetPhoto = e.photos.find((p) => p.id === photoId);
+        const currentPhotos = e.photos || [];
+        const currentSelectedCount = currentPhotos.filter((p) => p.isSelected).length;
+        const targetPhoto = currentPhotos.find((p) => p.id === photoId);
         const willSelect = !targetPhoto?.isSelected;
 
         if (willSelect && e.maxSelectionLimit && currentSelectedCount >= e.maxSelectionLimit) {
@@ -791,7 +842,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           selectedAt: selectedAt || undefined,
         });
 
-        const updatedPhotos = e.photos.map((p) =>
+        const updatedPhotos = currentPhotos.map((p) =>
           p.id === photoId
             ? {
                 ...p,
@@ -839,7 +890,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (ageMs >= RETENTION_MS && !e.isStoragePurged) {
           cleanedCount++;
           // Purge heavy image URLs to save disk/bandwidth while preserving photo names, selections & metadata
-          const purgedPhotos = e.photos.map((p) => ({
+          const purgedPhotos = (e.photos || []).map((p) => ({
             ...p,
             url: '', // image payload cleared
             thumbnailUrl: '',
@@ -893,6 +944,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         adminAddPoints,
         adminResetPassword,
         adminUpdateSettings,
+        adminUpdateOwnCredentials,
         createEvent,
         extendDeadline,
         updateEvent,

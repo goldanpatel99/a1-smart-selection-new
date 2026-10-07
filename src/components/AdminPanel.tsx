@@ -37,6 +37,7 @@ export const AdminPanel: React.FC = () => {
     adminAddPoints,
     adminResetPassword,
     adminUpdateSettings,
+    adminUpdateOwnCredentials,
     runStorageAutoClean,
     navigateTo,
     showToast,
@@ -54,6 +55,25 @@ export const AdminPanel: React.FC = () => {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [tempPasswordModal, setTempPasswordModal] = useState<{ user: User; pass: string } | null>(null);
   const [customPasswordInput, setCustomPasswordInput] = useState<string>('');
+
+  // Admin Self-Credentials Modification Modal State
+  const adminUser = users.find((u) => u.role === 'admin');
+  const [showAdminCredsModal, setShowAdminCredsModal] = useState(false);
+  const [adminEmailInput, setAdminEmailInput] = useState(adminUser?.email || 'admin@a1smartselection.com');
+  const [adminPassInput, setAdminPassInput] = useState(adminUser?.password || 'admin');
+  const [showAdminPasswordPlain, setShowAdminPasswordPlain] = useState(false);
+
+  const handleSaveAdminCreds = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminEmailInput.trim() || !adminPassInput.trim()) {
+      showToast('Admin email aur password empty nahi ho sakte!', 'error');
+      return;
+    }
+    const ok = adminUpdateOwnCredentials(adminEmailInput.trim(), adminPassInput.trim());
+    if (ok) {
+      setShowAdminCredsModal(false);
+    }
+  };
 
   const toggleShowPassword = (userId: string) => {
     setShowPasswords((prev) => ({ ...prev, [userId]: !prev[userId] }));
@@ -104,12 +124,12 @@ export const AdminPanel: React.FC = () => {
   // Editable pricing settings
   const [settingsForm, setSettingsForm] = useState<AdminSettings>(() => ({
     ...adminSettings,
-    pricingPackages: adminSettings.pricingPackages.map((p) => ({ ...p })),
+    pricingPackages: (adminSettings.pricingPackages || []).map((p) => ({ ...p })),
   }));
 
   const photographers = users.filter((u) => u.role === 'photographer');
   const totalEvents = events.length;
-  const totalPhotos = events.reduce((sum, e) => sum + e.photos.length, 0);
+  const totalPhotos = events.reduce((sum, e) => sum + (e.photos ? e.photos.length : (e.photosCount || 0)), 0);
   const totalRevenue = transactions
     .filter((t) => t.amountRupees)
     .reduce((sum, t) => sum + (t.amountRupees || 0), 0);
@@ -171,18 +191,29 @@ export const AdminPanel: React.FC = () => {
           <h1 className="text-2xl sm:text-3xl font-extrabold font-heading text-white mt-1">
             A1 Master Administration
           </h1>
-          <p className="text-xs text-neutral-400">
-            Control photographers, adjust points balances, manage pricing packages and inspect system activity.
-          </p>
         </div>
 
-        <button
-          onClick={() => navigateTo('dashboard')}
-          className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 self-start sm:self-auto"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Exit to Studio View</span>
-        </button>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          <button
+            onClick={() => {
+              setAdminEmailInput(adminUser?.email || 'admin@a1smartselection.com');
+              setAdminPassInput(adminUser?.password || 'admin');
+              setShowAdminCredsModal(true);
+            }}
+            className="px-3.5 py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+          >
+            <Key className="w-3.5 h-3.5" />
+            <span>Modify Admin ID & Pass</span>
+          </button>
+
+          <button
+            onClick={() => navigateTo('dashboard')}
+            className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-xl text-xs font-semibold flex items-center gap-1.5"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Exit to Studio View</span>
+          </button>
+        </div>
       </div>
 
       {/* Overview Metric Cards */}
@@ -248,9 +279,6 @@ export const AdminPanel: React.FC = () => {
                   10 GB Free Tier
                 </span>
               </div>
-              <p className="text-xs text-neutral-400 mt-0.5">
-                Previews Cloudflare R2 / Object Storage par hosted hain. 50 din baad previews auto-purge hokar storage free ho jati hai.
-              </p>
             </div>
           </div>
 
@@ -365,9 +393,6 @@ export const AdminPanel: React.FC = () => {
               <h3 className="text-base font-bold text-white font-heading">
                 Photographers & Studios Directory
               </h3>
-              <p className="text-xs text-neutral-400">
-                Admin can give free points, deduct points, or reset studio passwords.
-              </p>
             </div>
           </div>
 
@@ -964,6 +989,94 @@ export const AdminPanel: React.FC = () => {
                 Close Window
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin ID & Password Self-Modification Modal */}
+      {showAdminCredsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-md bg-neutral-900 border border-amber-500/30 rounded-3xl p-6 sm:p-7 shadow-2xl overflow-hidden">
+            <button
+              onClick={() => setShowAdminCredsModal(false)}
+              className="absolute top-4 right-4 text-neutral-400 hover:text-white p-2 rounded-xl hover:bg-neutral-800 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white font-heading">
+                  Modify Admin Login ID & Password
+                </h3>
+                <span className="text-[10px] text-emerald-400 font-mono">
+                  Super Admin Credentials Security
+                </span>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveAdminCreds} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
+                  Admin Login ID (Email / Username)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={adminEmailInput}
+                  onChange={(e) => setAdminEmailInput(e.target.value)}
+                  placeholder="e.g. admin@a1smartselection.com"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-neutral-300">
+                    Admin Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminPasswordPlain(!showAdminPasswordPlain)}
+                    className="text-[11px] text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1"
+                  >
+                    {showAdminPasswordPlain ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{showAdminPasswordPlain ? 'Hide' : 'Show'}</span>
+                  </button>
+                </div>
+                <input
+                  type={showAdminPasswordPlain ? 'text' : 'password'}
+                  required
+                  value={adminPassInput}
+                  onChange={(e) => setAdminPassInput(e.target.value)}
+                  placeholder="Enter secure password"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-amber-500"
+                />
+                <p className="text-[11px] text-neutral-500 mt-1">
+                  Yahan se apna naya private login ID aur password save kar lein. Agli baar isi se login hoga.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAdminCredsModal(false)}
+                  className="px-4 py-2.5 rounded-xl border border-neutral-800 text-xs font-semibold text-neutral-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-1.5"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save Secure Credentials</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -134,7 +134,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
     currentUser?.role === 'admin' ? true : t.userId === currentUser?.id
   );
 
-  const totalPhotos = myEvents.reduce((acc, e) => acc + e.photos.length, 0);
+  const totalPhotos = myEvents.reduce(
+    (acc, e) => acc + (e.photos ? e.photos.length : (e.photosCount || 0)),
+    0
+  );
   const completedEvents = myEvents.filter((e) => e.status === 'completed').length;
 
   const handleCopyLink = (event: typeof myEvents[0]) => {
@@ -147,7 +150,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const handleWhatsAppShare = (event: typeof myEvents[0]) => {
     const url = `${window.location.origin}${window.location.pathname}#gallery/${event.slug || event.id}`;
-    let phoneDigits = event.clientPhone.replace(/[^0-9]/g, '');
+    let phoneDigits = (event.clientPhone || '').replace(/[^0-9]/g, '');
     if (phoneDigits.length === 10) {
       phoneDigits = '91' + phoneDigits;
     }
@@ -223,7 +226,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
               <p className="text-xs text-neutral-300 mt-0.5">
                 Naye photographers ka starting balance 0 points hota hai. Naya wedding event banane ke
-                liye ₹{adminSettings.pricingPackages[0]?.priceRupees || 110} se points recharge karein ({adminSettings.pricingPackages.map((p) => `₹${p.priceRupees}`).join(' / ')}).
+                liye ₹{adminSettings?.pricingPackages?.[0]?.priceRupees || 110} se points recharge karein ({(adminSettings?.pricingPackages || []).map((p) => `₹${p.priceRupees}`).join(' / ') || '₹110'}).
               </p>
             </div>
           </div>
@@ -231,7 +234,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             onClick={onOpenBuyPoints}
             className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow hover:scale-105 transition-all whitespace-nowrap self-start sm:self-auto"
           >
-            Buy Points (Starts @ ₹{adminSettings.pricingPackages[0]?.priceRupees || 110})
+            Buy Points (Starts @ ₹{adminSettings?.pricingPackages?.[0]?.priceRupees || 110})
           </button>
         </div>
       )}
@@ -505,8 +508,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {filteredEvents.map((event) => {
-                const selectedCount = event.selectedCount ?? event.photos.filter((p) => p.isSelected).length;
-                const totalPhotos = event.photosCount ?? event.photos.length;
+                const photosList = event.photos || [];
+                const foldersList = event.folders || [];
+                const selectedCount = event.selectedCount ?? photosList.filter((p) => p.isSelected).length;
+                const totalPhotos = event.photosCount ?? photosList.length;
                 const isCopied = copiedEventId === event.id;
                 const timeLeftInfo = getEventTimeLeft(event.deadlineDate, event.status);
 
@@ -610,7 +615,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-[11px] text-neutral-400 pt-1 border-t border-neutral-800/80">
-                          <span>{event.folders.length} Folders</span>
+                          <span>{foldersList.length} Folders</span>
                           <span>{totalPhotos} Photos Uploaded</span>
                           <span className="text-rose-400 font-bold">
                             ❤️ {selectedCount} Selected

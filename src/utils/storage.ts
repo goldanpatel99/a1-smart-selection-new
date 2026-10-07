@@ -2,18 +2,21 @@ import { WeddingEvent, User, PointTransaction, AdminSettings } from '../types';
 import { INITIAL_ADMIN_SETTINGS, INITIAL_USERS, INITIAL_EVENTS, INITIAL_TRANSACTIONS } from './mockData';
 
 const STORAGE_KEYS = {
-  USERS: 'a1_users_v4',
-  CURRENT_USER_ID: 'a1_current_user_id_v4',
-  EVENTS: 'a1_events_v4',
-  TRANSACTIONS: 'a1_transactions_v4',
-  SETTINGS: 'a1_settings_v4',
+  USERS: 'a1_users_v5',
+  CURRENT_USER_ID: 'a1_current_user_id_v5',
+  EVENTS: 'a1_events_v5',
+  TRANSACTIONS: 'a1_transactions_v5',
+  SETTINGS: 'a1_settings_v5',
 };
 
 // Cleanup older versions and dummy data
 try {
-  ['a1_events_v1', 'a1_transactions_v1', 'a1_users_v1',
-   'a1_events_v2', 'a1_transactions_v2', 'a1_users_v2', 'a1_current_user_id_v2',
-   'a1_events_v3', 'a1_transactions_v3', 'a1_users_v3', 'a1_current_user_id_v3'].forEach((key) => {
+  [
+    'a1_events_v1', 'a1_transactions_v1', 'a1_users_v1',
+    'a1_events_v2', 'a1_transactions_v2', 'a1_users_v2', 'a1_current_user_id_v2',
+    'a1_events_v3', 'a1_transactions_v3', 'a1_users_v3', 'a1_current_user_id_v3',
+    'a1_events_v4', 'a1_transactions_v4', 'a1_users_v4', 'a1_current_user_id_v4'
+  ].forEach((key) => {
     localStorage.removeItem(key);
   });
 } catch {}
@@ -42,14 +45,9 @@ export const storage = {
 
   getCurrentUserId(): string | null {
     try {
-      const stored = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-      if (!stored) {
-        localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, 'user-goldan-patel');
-        return 'user-goldan-patel';
-      }
-      return stored;
+      return localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
     } catch {
-      return 'user-goldan-patel';
+      return null;
     }
   },
 

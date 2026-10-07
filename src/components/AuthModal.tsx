@@ -42,18 +42,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
       if (success) onClose();
     } else if (mode === 'admin') {
-      const success = login(
-        email.trim() || 'admin@nepoliancinematicstudio.com',
-        'admin',
-        password.trim() || undefined
-      );
+      if (!email.trim() || !password.trim()) {
+        showToast('Admin ID aur Password enter karein!', 'error');
+        return;
+      }
+      const success = login(email.trim(), 'admin', password.trim());
       if (success) onClose();
     } else {
-      const success = login(
-        email.trim() || 'nepoliancinematicstudio@gmail.com',
-        'photographer',
-        password.trim() || undefined
-      );
+      if (!email.trim() || !password.trim()) {
+        showToast('Photographer ID aur Password enter karein!', 'error');
+        return;
+      }
+      const success = login(email.trim(), 'photographer', password.trim());
       if (success) onClose();
     }
   };
@@ -111,57 +111,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
         {/* Title */}
-        <div className="mb-4">
+        <div className="mb-5">
           <h2 className="text-2xl font-bold font-heading text-white">
             {mode === 'login' && 'Photographer Login'}
             {mode === 'signup' && 'Studio Registration'}
             {mode === 'admin' && 'Admin Control Portal'}
           </h2>
-          <p className="text-xs text-neutral-400 mt-1">
-            {mode === 'signup' &&
-              'Register your photography studio to manage client photo selections.'}
-            {mode === 'login' &&
-              'Access your wedding events, points balance, and client selections.'}
-            {mode === 'admin' &&
-              'Manage photographers, adjust points, reset passwords, and system pricing.'}
-          </p>
         </div>
-
-        {/* Admin Credentials Helper Box */}
-        {mode === 'admin' && (
-          <div className="p-3.5 bg-neutral-950 border border-amber-500/30 rounded-xl mb-4 text-xs space-y-2">
-            <div className="font-bold text-amber-400 flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <Shield className="w-3.5 h-3.5" />
-                <span>Admin Login Credentials:</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('admin@nepoliancinematicstudio.com');
-                  setPassword('admin@nepolian');
-                }}
-                className="text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-lg transition-colors font-medium"
-              >
-                ⚡ Auto-Fill ID & Pass
-              </button>
-            </div>
-            <div className="text-[11px] text-neutral-300 space-y-1 font-mono">
-              <div className="flex items-center justify-between">
-                <span className="text-neutral-400 font-sans">Admin ID:</span>
-                <span className="font-bold text-white">admin@nepoliancinematicstudio.com</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-neutral-400 font-sans">Alternate ID:</span>
-                <span className="font-bold text-amber-200">goldanpatel99@gmail.com</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-neutral-400 font-sans">Password:</span>
-                <span className="font-bold text-emerald-400">admin@nepolian</span>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Form - All fields strictly mandatory */}
         <form onSubmit={handleSubmit} className="space-y-3.5">
@@ -231,8 +187,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 required
                 placeholder={
                   mode === 'admin'
-                    ? 'admin@nepoliancinematicstudio.com'
-                    : 'nepoliancinematicstudio@gmail.com'
+                    ? 'admin@a1smartselection.com'
+                    : 'yourstudio@gmail.com'
                 }
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}

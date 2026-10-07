@@ -74,7 +74,7 @@ export const PhotoUploadPage: React.FC = () => {
   // Hidden folder-only input with webkitdirectory
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<string>(
-    activeEvent?.folders[0]?.id || ''
+    activeEvent?.folders?.[0]?.id || ''
   );
   const [newFolderName, setNewFolderName] = useState('');
   const [showAddFolderInput, setShowAddFolderInput] = useState(false);
@@ -83,6 +83,18 @@ export const PhotoUploadPage: React.FC = () => {
   const [applyWatermark, setApplyWatermark] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [looseFileWarning, setLooseFileWarning] = useState<string | null>(null);
+
+  // Maximum 3000 photos capacity warning state
+  const [capacityWarning, setCapacityWarning] = useState<{
+    current: number;
+    attempted: number;
+    max: number;
+  } | null>(null);
+
+  // Live active uploading thumbnail previews
+  const [liveThumbnails, setLiveThumbnails] = useState<
+    Array<{ name: string; url: string; folder: string; id: string }>
+  >([]);
 
   if (!activeEvent) {
     return (
@@ -98,10 +110,14 @@ export const PhotoUploadPage: React.FC = () => {
     );
   }
 
+  // Safe folders and photos collections
+  const eventFolders = activeEvent.folders || [];
+  const eventPhotos = activeEvent.photos || [];
+
   // Active folder for viewing photos
   const currentFolder =
-    activeEvent.folders.find((f) => f.id === selectedFolderId) || activeEvent.folders[0];
-  const activeFolderPhotos = activeEvent.photos.filter(
+    eventFolders.find((f) => f.id === selectedFolderId) || eventFolders[0];
+  const activeFolderPhotos = eventPhotos.filter(
     (p) => p.folderId === currentFolder?.id
   );
 
@@ -120,8 +136,22 @@ export const PhotoUploadPage: React.FC = () => {
       return;
     }
 
+    // STRICT CHECK: One Event Max Photos Capacity = 3000 photos
+    const MAX_EVENT_CAPACITY = 3000;
+    const currentEventPhotosCount = eventPhotos.length;
+
+    if (currentEventPhotosCount + items.length > MAX_EVENT_CAPACITY) {
+      setCapacityWarning({
+        current: currentEventPhotosCount,
+        attempted: items.length,
+        max: MAX_EVENT_CAPACITY,
+      });
+      return;
+    }
+
     setIsProcessing(true);
     setLooseFileWarning(null);
+    setLiveThumbnails([]);
 
     const newPhotosData: Array<{
       filename: string;
@@ -133,33 +163,57 @@ export const PhotoUploadPage: React.FC = () => {
       sizeBytes: number;
     }> = [];
 
-    for (let i = 0; i < items.length; i++) {
-      const { file, folderName } = items[i];
-      setProcessingStatus({ current: i + 1, total: items.length, folder: folderName });
+    // Parallel multi-worker chunk processing (5 concurrent workers for ultra-high speed)
+    const CONCURRENCY = 5;
+    for (let i = 0; i < items.length; i += CONCURRENCY) {
+      const chunk = items.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map(async ({ file, folderName }) => {
+          try {
+            const compressed = await compressAndWatermarkImage(file, {
+              maxWidth: 1100,
+              maxHeight: 900,
+              quality: 0.65, // Hard compression for highest storage efficiency
+              watermarkText: applyWatermark
+                ? currentUser?.watermarkText || currentUser?.studioName?.toUpperCase() || 'PREVIEW'
+                : '',
+              watermarkPosition: currentUser?.watermarkPosition || 'bottom-right',
+              watermarkOpacity: currentUser?.watermarkOpacity || 0.35,
+            });
 
-      try {
-        const compressed = await compressAndWatermarkImage(file, {
-          maxWidth: 1200,
-          quality: 0.70,
-          watermarkText: applyWatermark
-            ? currentUser?.watermarkText || currentUser?.studioName?.toUpperCase() || 'PREVIEW'
-            : '',
-          watermarkPosition: currentUser?.watermarkPosition || 'bottom-right',
-          watermarkOpacity: currentUser?.watermarkOpacity || 0.35,
-        });
+            return {
+              filename: file.name,
+              originalName: file.name,
+              folderId: '',
+              folderName: folderName,
+              url: compressed.dataUrl,
+              thumbnailUrl: compressed.dataUrl,
+              sizeBytes: compressed.sizeBytes,
+            };
+          } catch (err) {
+            console.error('Failed to compress file', file.name, err);
+            return null;
+          }
+        })
+      );
 
-        newPhotosData.push({
-          filename: file.name,
-          originalName: file.name,
-          folderId: '', // Will be mapped by AppContext to the exact folderName
-          folderName: folderName,
-          url: compressed.dataUrl,
-          thumbnailUrl: compressed.dataUrl,
-          sizeBytes: compressed.sizeBytes,
-        });
-      } catch (err) {
-        console.error('Failed to compress file', file.name, err);
+      const validPhotos = results.filter(Boolean) as any[];
+      newPhotosData.push(...validPhotos);
+
+      const processedCount = Math.min(items.length, i + chunk.length);
+      const latest = validPhotos[validPhotos.length - 1];
+      if (latest) {
+        setLiveThumbnails((prev) => [
+          { id: `${Date.now()}-${Math.random()}`, name: latest.filename, url: latest.url, folder: latest.folderName },
+          ...prev.slice(0, 5),
+        ]);
       }
+
+      setProcessingStatus({
+        current: processedCount,
+        total: items.length,
+        folder: chunk[0]?.folderName || 'Photos',
+      });
     }
 
     addPhotosToEvent(activeEvent.id, newPhotosData);
@@ -294,7 +348,7 @@ export const PhotoUploadPage: React.FC = () => {
               </span>
               <span className="text-neutral-500">•</span>
               <span className="text-xs text-neutral-400 font-mono">
-                {activeEvent.photos.length} Total Previews
+                {eventPhotos.length} Total Previews
               </span>
             </div>
             <h1 className="text-2xl font-bold font-heading text-white">{activeEvent.title}</h1>
@@ -370,7 +424,7 @@ export const PhotoUploadPage: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
                 <Layers className="w-4 h-4 text-amber-400" />
-                Event Folders ({activeEvent.folders.length})
+                Event Folders ({eventFolders.length})
               </h3>
               <button
                 onClick={() => setShowAddFolderInput(!showAddFolderInput)}
@@ -403,14 +457,14 @@ export const PhotoUploadPage: React.FC = () => {
               </form>
             )}
 
-            {activeEvent.folders.length === 0 ? (
+            {eventFolders.length === 0 ? (
               <div className="py-6 text-center text-neutral-500 text-xs">
                 No folders added yet. Select or drop a folder from your computer.
               </div>
             ) : (
               <div className="space-y-1.5">
-                {activeEvent.folders.map((folder) => {
-                  const folderPhotosCount = activeEvent.photos.filter(
+                {eventFolders.map((folder) => {
+                  const folderPhotosCount = eventPhotos.filter(
                     (p) => p.folderId === folder.id
                   ).length;
                   const isSelected = selectedFolderId === folder.id;
@@ -545,24 +599,72 @@ export const PhotoUploadPage: React.FC = () => {
               </label>
             </div>
 
-            {/* Processing Overlay */}
+            {/* High-Speed Concurrent Processing Overlay with Live Thumbnails */}
             {isProcessing && (
-              <div className="absolute inset-0 bg-neutral-950/92 backdrop-blur-sm rounded-3xl flex flex-col items-center justify-center p-6 z-20 animate-in fade-in">
-                <div className="w-10 h-10 border-3 border-amber-400 border-t-transparent rounded-full animate-spin mb-3"></div>
-                <div className="text-sm font-bold text-white mb-1">
-                  Compressing Previews in Folder: "{processingStatus.folder}"
+              <div className="absolute inset-0 bg-neutral-950/95 backdrop-blur-md rounded-3xl flex flex-col items-center justify-center p-6 sm:p-8 z-30 animate-in fade-in">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-3 shadow-lg shadow-amber-500/10">
+                  <div className="w-6 h-6 border-3 border-amber-400 border-t-transparent rounded-full animate-spin" />
                 </div>
-                <div className="text-xs text-neutral-400">
-                  Processing photo {processingStatus.current} of {processingStatus.total}...
+
+                <div className="text-base font-extrabold text-white font-heading mb-1 text-center">
+                  Compressing & Uploading: "{processingStatus.folder}"
                 </div>
-                <div className="w-72 h-2 bg-neutral-800 rounded-full mt-3 overflow-hidden">
+
+                <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 font-mono font-bold px-2 py-0.5 rounded border border-amber-500/30">
+                    ⚡ 5x Concurrent Acceleration
+                  </span>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold px-2 py-0.5 rounded border border-emerald-500/30">
+                    🗜️ Ultra Storage Compression (~55 KB)
+                  </span>
+                </div>
+
+                <div className="text-xs font-mono text-neutral-300 mb-2">
+                  Processed <strong className="text-white">{processingStatus.current}</strong> of{' '}
+                  <strong className="text-white">{processingStatus.total}</strong> photos (
+                  {Math.round(((processingStatus.current || 0) / (processingStatus.total || 1)) * 100)}%)
+                </div>
+
+                {/* Main Progress Bar */}
+                <div className="w-full max-w-md h-3 bg-neutral-900 rounded-full border border-neutral-800 overflow-hidden shadow-inner mb-5">
                   <div
-                    className="h-full bg-amber-400 transition-all duration-200"
+                    className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-400 transition-all duration-200 rounded-full"
                     style={{
-                      width: `${(processingStatus.current / processingStatus.total) * 100}%`,
+                      width: `${Math.max(3, ((processingStatus.current || 0) / (processingStatus.total || 1)) * 100)}%`,
                     }}
                   />
                 </div>
+
+                {/* Live Real-time Thumbnail Preview Strip (Small/Medium thumbnails) */}
+                {liveThumbnails.length > 0 && (
+                  <div className="w-full max-w-lg">
+                    <div className="text-[11px] font-semibold text-neutral-400 mb-2 flex items-center justify-between">
+                      <span>Live Uploading Thumbnails:</span>
+                      <span className="text-[10px] text-emerald-400 font-mono">✓ High Speed Encoded</span>
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                      {liveThumbnails.map((thumb) => (
+                        <div
+                          key={thumb.id}
+                          className="relative aspect-square rounded-xl overflow-hidden border border-amber-500/40 bg-neutral-900 shadow-md animate-in fade-in zoom-in-95"
+                        >
+                          <img
+                            src={thumb.url}
+                            alt={thumb.name}
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                          <span className="absolute bottom-1 left-1 right-1 text-[9px] font-mono text-white truncate drop-shadow">
+                            {thumb.name}
+                          </span>
+                          <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-emerald-500 text-white rounded-full flex items-center justify-center text-[8px] font-bold shadow">
+                            ✓
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -639,6 +741,53 @@ export const PhotoUploadPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* POP-WARNING MODAL: In one event max photos capacity 3000 */}
+      {capacityWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
+          <div className="relative w-full max-w-md bg-neutral-900 border border-rose-500/50 rounded-3xl p-6 sm:p-7 shadow-2xl text-center">
+            <div className="w-16 h-16 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mx-auto mb-4">
+              <AlertTriangle className="w-8 h-8" />
+            </div>
+
+            <h3 className="text-xl font-extrabold text-white font-heading mb-1.5">
+              Event Photos Capacity Limit (Max 3000)
+            </h3>
+            <p className="text-xs text-rose-300 font-semibold mb-4">
+              In one event max photos capacity is 3000 photos!
+            </p>
+
+            <div className="p-3.5 bg-neutral-950 rounded-2xl border border-neutral-800 text-xs space-y-2 mb-5 text-left font-mono">
+              <div className="flex items-center justify-between text-neutral-300">
+                <span>Already Uploaded:</span>
+                <span className="font-bold text-white">{capacityWarning.current} photos</span>
+              </div>
+              <div className="flex items-center justify-between text-neutral-300">
+                <span>You Tried To Add:</span>
+                <span className="font-bold text-rose-400">+{capacityWarning.attempted} photos</span>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-neutral-800 text-neutral-300">
+                <span>Total Would Be:</span>
+                <span className="font-extrabold text-rose-300 font-sans text-sm">
+                  {capacityWarning.current + capacityWarning.attempted} / {capacityWarning.max}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-neutral-400 mb-5 leading-relaxed">
+              Ek event mein maximum 3,000 photos upload karne ki limit hai taaki client browser aur mobile par gallery bina kisi lag ke fast open ho sake. Kripya folder se kam photos select karein.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setCapacityWarning(null)}
+              className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow-lg hover:scale-105 transition-all"
+            >
+              OK, Got It (Theek Hai)
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

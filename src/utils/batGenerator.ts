@@ -1,7 +1,8 @@
 import { WeddingEvent } from '../types';
 
 export function generateBatScript(event: WeddingEvent): string {
-  const selectedPhotos = event.photos.filter((p) => p.isSelected);
+  const allPhotos = event.photos || [];
+  const selectedPhotos = allPhotos.filter((p) => p.isSelected);
   const foldersWithSelections = Array.from(
     new Set(selectedPhotos.map((p) => p.folderName || 'Selected'))
   );
@@ -90,7 +91,8 @@ export function generateBatScript(event: WeddingEvent): string {
 }
 
 export function generateShScript(event: WeddingEvent): string {
-  const selectedPhotos = event.photos.filter((p) => p.isSelected);
+  const allPhotos = event.photos || [];
+  const selectedPhotos = allPhotos.filter((p) => p.isSelected);
   const foldersWithSelections = Array.from(
     new Set(selectedPhotos.map((p) => p.folderName || 'Selected'))
   );
@@ -146,7 +148,8 @@ export function generateShScript(event: WeddingEvent): string {
 }
 
 export function generateLightroomFilenames(event: WeddingEvent, includeExtension: boolean = false): string {
-  const selectedPhotos = event.photos.filter((p) => p.isSelected);
+  const allPhotos = event.photos || [];
+  const selectedPhotos = allPhotos.filter((p) => p.isSelected);
   return selectedPhotos
     .map((p) => {
       if (includeExtension) return p.filename;
@@ -156,7 +159,8 @@ export function generateLightroomFilenames(event: WeddingEvent, includeExtension
 }
 
 export function generateCsvReport(event: WeddingEvent): string {
-  const selectedPhotos = event.photos.filter((p) => p.isSelected);
+  const allPhotos = event.photos || [];
+  const selectedPhotos = allPhotos.filter((p) => p.isSelected);
   const rows: string[] = ['Folder,Filename,Selected Date,Client Comment'];
 
   selectedPhotos.forEach((p) => {

@@ -30,6 +30,7 @@ import {
   Flame,
 } from 'lucide-react';
 import { downloadFile, generateBatScript } from '../utils/batGenerator';
+import { downloadExportWithWorker } from '../utils/batWorkerExport';
 
 interface LandingPageProps {
   onOpenAuth: (mode: 'login' | 'signup' | 'admin') => void;
@@ -126,8 +127,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    const batContent = generateBatScript(mockDemoEvent);
-    downloadFile(batContent, `A1_Copy_Interactive_Demo.bat`, 'text/plain');
+    downloadExportWithWorker('GENERATE_BAT', mockDemoEvent)
+      .catch(() => {
+        const batContent = generateBatScript(mockDemoEvent);
+        downloadFile(batContent, `A1_Copy_Interactive_Demo.bat`, 'text/plain');
+      });
   };
 
   return (

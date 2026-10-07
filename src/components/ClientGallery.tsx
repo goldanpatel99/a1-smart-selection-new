@@ -104,11 +104,13 @@ export const ClientGallery: React.FC = () => {
   }
 
   // Filter visible folders only
-  const visibleFolders = activeEvent.folders.filter((f) => f.visible !== false);
+  const allPhotos = activeEvent.photos || [];
+  const allFolders = activeEvent.folders || [];
+  const visibleFolders = allFolders.filter((f) => f.visible !== false);
 
   // Filtered photos
   const filteredPhotos = useMemo(() => {
-    return activeEvent.photos.filter((photo) => {
+    return allPhotos.filter((photo) => {
       // Folder filter
       if (activeFolderId !== 'all' && photo.folderId !== activeFolderId) {
         return false;
@@ -118,9 +120,9 @@ export const ClientGallery: React.FC = () => {
       if (filterMode === 'unselected' && photo.isSelected) return false;
       return true;
     });
-  }, [activeEvent.photos, activeFolderId, filterMode]);
+  }, [allPhotos, activeFolderId, filterMode]);
 
-  const selectedCount = activeEvent.photos.filter((p) => p.isSelected).length;
+  const selectedCount = allPhotos.filter((p) => p.isSelected).length;
   const maxLimit = activeEvent.maxSelectionLimit;
   const isLimitReached = !!maxLimit && selectedCount >= maxLimit;
 
@@ -451,13 +453,13 @@ export const ClientGallery: React.FC = () => {
                 activeFolderId === 'all' ? 'bg-black/20 text-neutral-950 font-mono' : 'bg-neutral-800'
               }`}
             >
-              {activeEvent.photos.length}
+              {allPhotos.length}
             </span>
           </button>
 
           {visibleFolders.map((folder) => {
-            const folderCount = activeEvent.photos.filter((p) => p.folderId === folder.id).length;
-            const folderSelected = activeEvent.photos.filter(
+            const folderCount = allPhotos.filter((p) => p.folderId === folder.id).length;
+            const folderSelected = allPhotos.filter(
               (p) => p.folderId === folder.id && p.isSelected
             ).length;
             const isCurrent = activeFolderId === folder.id;
@@ -498,7 +500,7 @@ export const ClientGallery: React.FC = () => {
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
-              All Photos ({activeEvent.photos.length})
+              All Photos ({allPhotos.length})
             </button>
             <button
               onClick={() => setFilterMode('selected')}
@@ -519,7 +521,7 @@ export const ClientGallery: React.FC = () => {
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
-              Unselected ({activeEvent.photos.length - selectedCount})
+              Unselected ({allPhotos.length - selectedCount})
             </button>
           </div>
 
@@ -530,7 +532,7 @@ export const ClientGallery: React.FC = () => {
 
         {/* Photo Gallery Grid */}
         {filteredPhotos.length === 0 ? (
-          activeEvent.photos.length === 0 && (activeEvent.photosCount || 0) > 0 ? (
+          allPhotos.length === 0 && (activeEvent.photosCount || 0) > 0 ? (
             <div className="text-center py-20 bg-neutral-900/30 rounded-3xl border border-neutral-800/80 my-8">
               <Sparkles className="w-10 h-10 text-amber-400 animate-pulse mx-auto mb-3" />
               <p className="text-sm font-bold text-white mb-1">Loading Photos From Cloud...</p>

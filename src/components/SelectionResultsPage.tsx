@@ -15,14 +15,16 @@ import {
   ExternalLink,
   Laptop,
   CheckCircle2,
+  Loader2,
+  Cpu,
 } from 'lucide-react';
 import {
-  generateBatScript,
-  generateShScript,
   generateLightroomFilenames,
-  generateCsvReport,
-  downloadFile,
 } from '../utils/batGenerator';
+import {
+  downloadExportWithWorker,
+  WorkerExportProgress,
+} from '../utils/batWorkerExport';
 
 export const SelectionResultsPage: React.FC = () => {
   const { activeEvent, navigateTo, showToast } = useApp();
@@ -31,6 +33,12 @@ export const SelectionResultsPage: React.FC = () => {
   const [includeExtension, setIncludeExtension] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFolderFilter, setSelectedFolderFilter] = useState('all');
+
+  // Web Worker batch processing state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportType, setExportType] = useState<'bat' | 'sh' | 'csv' | null>(null);
+  const [exportProgress, setExportProgress] = useState<number>(0);
+  const [exportStatusText, setExportStatusText] = useState<string>('');
 
   if (!activeEvent) {
     return (
@@ -46,14 +54,16 @@ export const SelectionResultsPage: React.FC = () => {
     );
   }
 
-  const selectedPhotos = activeEvent.photos.filter((p) => p.isSelected);
-  const totalPhotos = activeEvent.photos.length;
+  const allPhotos = activeEvent.photos || [];
+  const allFolders = activeEvent.folders || [];
+  const selectedPhotos = allPhotos.filter((p) => p.isSelected);
+  const totalPhotos = allPhotos.length;
   const pctSelected = totalPhotos > 0 ? Math.round((selectedPhotos.length / totalPhotos) * 100) : 0;
 
   // Folder breakdown
-  const folderStats = activeEvent.folders.map((folder) => {
-    const total = activeEvent.photos.filter((p) => p.folderId === folder.id).length;
-    const selected = activeEvent.photos.filter(
+  const folderStats = allFolders.map((folder) => {
+    const total = allPhotos.filter((p) => p.folderId === folder.id).length;
+    const selected = allPhotos.filter(
       (p) => p.folderId === folder.id && p.isSelected
     ).length;
     return {
@@ -65,25 +75,73 @@ export const SelectionResultsPage: React.FC = () => {
     };
   });
 
-  const handleDownloadBat = () => {
-    const batContent = generateBatScript(activeEvent);
-    const filename = `A1_Copy_${activeEvent.slug || activeEvent.id}.bat`;
-    downloadFile(batContent, filename, 'text/plain');
-    showToast(`Windows .BAT script downloaded: ${filename}`, 'success');
+  const handleDownloadBat = async () => {
+    if (isExporting || selectedPhotos.length === 0) return;
+    setIsExporting(true);
+    setExportType('bat');
+    setExportProgress(0);
+    setExportStatusText('Initializing background Web Worker...');
+
+    try {
+      const result = await downloadExportWithWorker('GENERATE_BAT', activeEvent, {
+        onProgress: (p: WorkerExportProgress) => {
+          setExportProgress(p.progress);
+          setExportStatusText(`Processing batch: ${p.processed} / ${p.total} photos (${p.progress}%)`);
+        },
+      });
+      showToast(`Windows .BAT file generated via Web Worker: ${result.filename}`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to generate .BAT file', 'error');
+    } finally {
+      setIsExporting(false);
+      setExportType(null);
+    }
   };
 
-  const handleDownloadSh = () => {
-    const shContent = generateShScript(activeEvent);
-    const filename = `A1_Copy_${activeEvent.slug || activeEvent.id}.sh`;
-    downloadFile(shContent, filename, 'text/x-sh');
-    showToast(`Mac/Linux .SH script downloaded: ${filename}`, 'success');
+  const handleDownloadSh = async () => {
+    if (isExporting || selectedPhotos.length === 0) return;
+    setIsExporting(true);
+    setExportType('sh');
+    setExportProgress(0);
+    setExportStatusText('Initializing background Web Worker...');
+
+    try {
+      const result = await downloadExportWithWorker('GENERATE_SH', activeEvent, {
+        onProgress: (p: WorkerExportProgress) => {
+          setExportProgress(p.progress);
+          setExportStatusText(`Processing batch: ${p.processed} / ${p.total} photos (${p.progress}%)`);
+        },
+      });
+      showToast(`Mac/Linux .SH script generated via Web Worker: ${result.filename}`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to generate .SH file', 'error');
+    } finally {
+      setIsExporting(false);
+      setExportType(null);
+    }
   };
 
-  const handleDownloadCsv = () => {
-    const csvContent = generateCsvReport(activeEvent);
-    const filename = `A1_Selection_${activeEvent.slug || activeEvent.id}.csv`;
-    downloadFile(csvContent, filename, 'text/csv');
-    showToast('CSV report downloaded!', 'success');
+  const handleDownloadCsv = async () => {
+    if (isExporting || selectedPhotos.length === 0) return;
+    setIsExporting(true);
+    setExportType('csv');
+    setExportProgress(0);
+    setExportStatusText('Generating CSV metadata in Web Worker...');
+
+    try {
+      const result = await downloadExportWithWorker('GENERATE_CSV', activeEvent, {
+        onProgress: (p: WorkerExportProgress) => {
+          setExportProgress(p.progress);
+          setExportStatusText(`Processing rows: ${p.processed} / ${p.total} (${p.progress}%)`);
+        },
+      });
+      showToast(`CSV selection report downloaded: ${result.filename}`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to generate CSV report', 'error');
+    } finally {
+      setIsExporting(false);
+      setExportType(null);
+    }
   };
 
   const handleCopyLightroom = () => {
@@ -176,7 +234,7 @@ export const SelectionResultsPage: React.FC = () => {
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4">
           <span className="text-neutral-400 text-xs">Folders</span>
           <div className="text-3xl font-extrabold text-white font-mono mt-1">
-            {activeEvent.folders.length}
+            {allFolders.length}
           </div>
           <p className="text-[11px] text-neutral-500 mt-1">Ceremony, Reception, etc.</p>
         </div>
@@ -224,24 +282,64 @@ export const SelectionResultsPage: React.FC = () => {
             {/* Windows .BAT Button */}
             <button
               onClick={handleDownloadBat}
-              disabled={selectedPhotos.length === 0}
-              className="px-6 py-3.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 hover:from-amber-400 hover:to-amber-200 text-neutral-950 font-extrabold text-sm rounded-2xl shadow-xl shadow-amber-500/25 transition-all hover:scale-105 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={selectedPhotos.length === 0 || isExporting}
+              className="px-6 py-3.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 hover:from-amber-400 hover:to-amber-200 text-neutral-950 font-extrabold text-sm rounded-2xl shadow-xl shadow-amber-500/25 transition-all hover:scale-105 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              <Terminal className="w-5 h-5 text-neutral-950" />
-              <span>Download Windows .BAT File</span>
+              {isExporting && exportType === 'bat' ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin text-neutral-950" />
+                  <span>Generating .BAT ({exportProgress}%)...</span>
+                </>
+              ) : (
+                <>
+                  <Terminal className="w-5 h-5 text-neutral-950" />
+                  <span>Download Windows .BAT File</span>
+                </>
+              )}
             </button>
 
             {/* Mac / Linux .SH Button */}
             <button
               onClick={handleDownloadSh}
-              disabled={selectedPhotos.length === 0}
-              className="px-4 py-3.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs rounded-2xl border border-neutral-700 transition-all flex items-center gap-2 disabled:opacity-50"
+              disabled={selectedPhotos.length === 0 || isExporting}
+              className="px-4 py-3.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs rounded-2xl border border-neutral-700 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
             >
-              <Laptop className="w-4 h-4 text-amber-400" />
-              <span>Mac / Linux (.SH)</span>
+              {isExporting && exportType === 'sh' ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                  <span>Processing ({exportProgress}%)...</span>
+                </>
+              ) : (
+                <>
+                  <Laptop className="w-4 h-4 text-amber-400" />
+                  <span>Mac / Linux (.SH)</span>
+                </>
+              )}
             </button>
           </div>
         </div>
+
+        {/* Real-time Web Worker Batch Processing Progress Indicator */}
+        {isExporting && (
+          <div className="my-5 p-4 rounded-2xl bg-neutral-950/80 border border-amber-500/30 animate-in fade-in">
+            <div className="flex items-center justify-between text-xs mb-2">
+              <div className="flex items-center gap-2 text-amber-300 font-semibold">
+                <Cpu className="w-4 h-4 text-amber-400 animate-pulse" />
+                <span>Web Worker Batch Export Active: {exportStatusText}</span>
+              </div>
+              <span className="font-mono font-bold text-white">{exportProgress}%</span>
+            </div>
+            <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-200 rounded-full"
+                style={{ width: `${Math.max(5, exportProgress)}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-neutral-400 mt-2">
+              Background Web Worker is handling metadata batching off the main thread. Browser UI remains completely responsive without lag.
+            </p>
+          </div>
+        )}
 
         {/* 3 Step Visual Guide */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 text-xs">
@@ -355,11 +453,20 @@ export const SelectionResultsPage: React.FC = () => {
 
           <button
             onClick={handleDownloadCsv}
-            disabled={selectedPhotos.length === 0}
-            className="w-full py-2.5 px-4 bg-neutral-800 hover:bg-neutral-750 text-white border border-neutral-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+            disabled={selectedPhotos.length === 0 || isExporting}
+            className="w-full py-2.5 px-4 bg-neutral-800 hover:bg-neutral-750 text-white border border-neutral-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50 cursor-pointer"
           >
-            <Download className="w-4 h-4 text-emerald-400" />
-            <span>Download CSV Spreadsheet</span>
+            {isExporting && exportType === 'csv' ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                <span>Exporting CSV ({exportProgress}%)...</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4 text-emerald-400" />
+                <span>Download CSV Spreadsheet</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -425,7 +532,7 @@ export const SelectionResultsPage: React.FC = () => {
               className="bg-neutral-950 border border-neutral-800 text-neutral-300 text-xs rounded-xl px-3 py-1.5 focus:outline-none"
             >
               <option value="all">All Folders</option>
-              {activeEvent.folders.map((f) => (
+              {allFolders.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
                 </option>
