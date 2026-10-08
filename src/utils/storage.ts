@@ -9,17 +9,20 @@ const STORAGE_KEYS = {
   SETTINGS: 'a1_settings_v6',
 };
 
-// Cleanup older versions and dummy data
+// Cleanup older versions, leftover mutations and reclaim storage quota
 try {
-  [
-    'a1_events_v1', 'a1_transactions_v1', 'a1_users_v1',
-    'a1_events_v2', 'a1_transactions_v2', 'a1_users_v2', 'a1_current_user_id_v2',
-    'a1_events_v3', 'a1_transactions_v3', 'a1_users_v3', 'a1_current_user_id_v3',
-    'a1_events_v4', 'a1_transactions_v4', 'a1_users_v4', 'a1_current_user_id_v4',
-    'a1_events_v5', 'a1_transactions_v5', 'a1_users_v5', 'a1_current_user_id_v5', 'a1_settings_v5'
-  ].forEach((key) => {
-    localStorage.removeItem(key);
-  });
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('firestore_mutations_') || key.startsWith('a1_events_v') || key.startsWith('a1_transactions_v'))) {
+        if (key !== STORAGE_KEYS.EVENTS && key !== STORAGE_KEYS.TRANSACTIONS) {
+          keysToRemove.push(key);
+        }
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  }
 } catch {}
 
 export const storage = {

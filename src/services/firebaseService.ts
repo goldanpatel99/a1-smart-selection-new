@@ -74,8 +74,10 @@ export const firebaseService = {
         },
         { merge: true }
       );
-    } catch (err) {
-      console.warn('Error updating event selections in Firestore:', err);
+    } catch (err: any) {
+      if (err?.code !== 'resource-exhausted') {
+        console.warn('Error updating event selections in Firestore:', err?.message || err);
+      }
     }
   },
 
@@ -167,8 +169,10 @@ export const firebaseService = {
   updatePhoto: async (eventId: string, photoId: string, updates: Partial<Photo>) => {
     try {
       await setDoc(doc(db, 'events', eventId, 'photos', photoId), updates, { merge: true });
-    } catch (err) {
-      console.warn('Error updating photo in Firestore:', err);
+    } catch (err: any) {
+      if (err?.code !== 'resource-exhausted') {
+        console.warn('Error updating photo in Firestore:', err?.message || err);
+      }
     }
   },
 

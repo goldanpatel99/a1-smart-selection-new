@@ -234,14 +234,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setEvents((prev) =>
           prev.map((e) => {
             if (e.id !== activeEventId) return e;
-            const selectedIds = cloudPhotos.filter((p) => p.isSelected).map((p) => p.id);
+
+            // Merge cloud photo properties with existing photos (preserving local images while synchronizing selection states)
+            const existingMap = new Map<string, Photo>();
+            (e.photos || []).forEach((p) => existingMap.set(p.id, p));
+
+            const mergedPhotos = cloudPhotos.map((cp) => {
+              const localPhoto = existingMap.get(cp.id);
+              return {
+                ...cp,
+                // If local photo has valid image url and cloud document only has thumbnail, preserve display url
+                url: localPhoto?.url || cp.url,
+                thumbnailUrl: localPhoto?.thumbnailUrl || cp.thumbnailUrl || cp.url,
+              };
+            });
+
+            const selectedIds = mergedPhotos.filter((p) => p.isSelected).map((p) => p.id);
             return {
               ...e,
-              photos: cloudPhotos,
-              photosCount: cloudPhotos.length,
+              photos: mergedPhotos,
+              photosCount: mergedPhotos.length,
               selectedCount: selectedIds.length,
               selectedPhotoIds: selectedIds,
-              coverPhotoUrl: e.coverPhotoUrl || cloudPhotos[0]?.url,
+              coverPhotoUrl: e.coverPhotoUrl || mergedPhotos[0]?.url,
             };
           })
         );
@@ -255,34 +270,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [activeEventId]);
 
-  // Handle URL hash routing on initial load
+  // Handle URL hash routing on initial load & popstate/hashchange across devices
   useEffect(() => {
-    const hash = window.location.hash.replace('#', '');
-    if (hash.startsWith('gallery/')) {
-      const slugOrId = hash.replace('gallery/', '');
-      const evt = events.find((e) => e.slug === slugOrId || e.id === slugOrId);
-      if (evt) {
-        setActiveEventId(evt.id);
-        setCurrentView('client-gallery');
-      } else {
-        // Fetch from Cloud Firestore if opened by client on a fresh device
-        firebaseService.getEventBySlugOrId(slugOrId).then((cloudEvt) => {
-          if (cloudEvt) {
-            setEvents((prev) => {
-              if (prev.some((e) => e.id === cloudEvt.id)) return prev;
-              return [...prev, cloudEvt];
-            });
-            setActiveEventId(cloudEvt.id);
-            setCurrentView('client-gallery');
-          }
-        });
+    const handleRouteFromHash = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (hash.startsWith('gallery/')) {
+        const slugOrId = hash.replace('gallery/', '');
+        const evt = events.find((e) => e.slug === slugOrId || e.id === slugOrId);
+        if (evt) {
+          setActiveEventId(evt.id);
+          setCurrentView('client-gallery');
+        } else {
+          // Fetch from Cloud Firestore if opened by client on a fresh device
+          firebaseService.getEventBySlugOrId(slugOrId).then((cloudEvt) => {
+            if (cloudEvt) {
+              setEvents((prev) => {
+                if (prev.some((e) => e.id === cloudEvt.id)) return prev;
+                return [...prev, cloudEvt];
+              });
+              setActiveEventId(cloudEvt.id);
+              setCurrentView('client-gallery');
+            }
+          });
+        }
+      } else if (hash === 'admin') {
+        setCurrentView('admin-panel');
+      } else if (hash === 'dashboard') {
+        setCurrentView('dashboard');
       }
-    } else if (hash === 'admin') {
-      setCurrentView('admin-panel');
-    } else if (hash === 'dashboard') {
-      setCurrentView('dashboard');
-    }
-  }, []);
+    };
+
+    handleRouteFromHash();
+    window.addEventListener('hashchange', handleRouteFromHash);
+    return () => window.removeEventListener('hashchange', handleRouteFromHash);
+  }, [events]);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);

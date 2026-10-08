@@ -1,21 +1,19 @@
 import { initializeApp } from 'firebase/app';
 import {
   initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
+  memoryLocalCache,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase SDK
 export const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with robust local caching and long-polling fallback for iframes/sandboxes
+// Initialize Firestore with memory cache (avoids browser localStorage quota exhaustion from large mutation queues)
+// and experimentalForceLongPolling for robust connectivity across all devices and sandboxes
 export const db = initializeFirestore(
   app,
   {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
+    localCache: memoryLocalCache(),
     experimentalForceLongPolling: true,
   },
   firebaseConfig.firestoreDatabaseId || undefined
