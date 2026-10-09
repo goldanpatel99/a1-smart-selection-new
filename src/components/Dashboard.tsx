@@ -36,6 +36,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { WeddingEvent } from '../types';
+import { getClientGalleryUrl } from '../utils/domainConfig';
 
 interface DashboardProps {
   onOpenBuyPoints: () => void;
@@ -141,15 +142,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const completedEvents = myEvents.filter((e) => e.status === 'completed').length;
 
   const handleCopyLink = (event: typeof myEvents[0]) => {
-    const url = `${window.location.origin}${window.location.pathname}#gallery/${event.slug || event.id}`;
+    const url = getClientGalleryUrl(event.slug || event.id);
     navigator.clipboard.writeText(url);
     setCopiedEventId(event.id);
-    showToast(`Client link copied to clipboard!`, 'success');
+    showToast(`Client link copied: ${url}`, 'success');
     setTimeout(() => setCopiedEventId(null), 2500);
   };
 
   const handleWhatsAppShare = (event: typeof myEvents[0]) => {
-    const url = `${window.location.origin}${window.location.pathname}#gallery/${event.slug || event.id}`;
+    const url = getClientGalleryUrl(event.slug || event.id);
     let phoneDigits = (event.clientPhone || '').replace(/[^0-9]/g, '');
     if (phoneDigits.length === 10) {
       phoneDigits = '91' + phoneDigits;

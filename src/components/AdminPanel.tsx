@@ -33,6 +33,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { User, AdminSettings } from '../types';
+import { getBaseAppUrl, CUSTOM_DOMAIN } from '../utils/domainConfig';
 
 export const AdminPanel: React.FC = () => {
   const {
@@ -139,7 +140,7 @@ export const AdminPanel: React.FC = () => {
     const cleanPhone = (user.phone || '').replace(/[^0-9]/g, '');
     const pass = user.password || '123456';
     const message = encodeURIComponent(
-      `Hello ${user.name},\n\nA1 Smart Selection Studio Credentials:\n• Studio: ${user.studioName}\n• Login ID (Email): ${user.email}\n• Password: ${pass}\n\nLogin URL: ${window.location.origin}\nThank you!`
+      `Hello ${user.name},\n\nA1 Smart Selection Studio Credentials:\n• Studio: ${user.studioName}\n• Login ID (Email): ${user.email}\n• Password: ${pass}\n\nLogin URL: ${getBaseAppUrl()}\nThank you!`
     );
     window.open(`https://wa.me/${cleanPhone}?text=${message}`, '_blank');
   };
