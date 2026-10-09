@@ -29,6 +29,8 @@ import {
   UserCheck,
   AlertTriangle,
   Loader2,
+  Globe,
+  ExternalLink,
 } from 'lucide-react';
 import { User, AdminSettings } from '../types';
 
@@ -76,6 +78,8 @@ export const AdminPanel: React.FC = () => {
   // Admin Self-Credentials Modification Modal State
   const adminUser = users.find((u) => u.role === 'admin');
   const [showAdminCredsModal, setShowAdminCredsModal] = useState(false);
+  const [showDomainModal, setShowDomainModal] = useState(false);
+  const [copiedDns, setCopiedDns] = useState<string | null>(null);
   const [adminEmailInput, setAdminEmailInput] = useState(adminUser?.email || 'admin@a1smartselection.com');
   const [adminPassInput, setAdminPassInput] = useState(adminUser?.password || 'admin');
   const [showAdminPasswordPlain, setShowAdminPasswordPlain] = useState(false);
@@ -238,7 +242,16 @@ export const AdminPanel: React.FC = () => {
           </h1>
         </div>
 
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+        <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+          <button
+            onClick={() => setShowDomainModal(true)}
+            className="px-3.5 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            title="Configure Hostinger Custom Domain a1smartselection.sbs"
+          >
+            <Globe className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Domain: a1smartselection.sbs</span>
+          </button>
+
           <button
             onClick={() => {
               setAdminEmailInput(adminUser?.email || 'admin@a1smartselection.com');
@@ -1403,6 +1416,139 @@ export const AdminPanel: React.FC = () => {
                     <span>Wipe & Reset Everything Now</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hostinger Custom Domain a1smartselection.sbs DNS & Redirection Guide Modal */}
+      {showDomainModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-xl w-full p-6 sm:p-7 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-4 pb-4 border-b border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+                  <Globe className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <span>Hostinger Domain Setup</span>
+                    <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      a1smartselection.sbs
+                    </span>
+                  </h3>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    Connect your purchased Hostinger domain to this live platform.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDomainModal(false)}
+                className="text-neutral-500 hover:text-white p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {/* Method 1: Hostinger Web Forwarding / Stealth Redirect (Easiest & Fastest, 2 Minutes) */}
+              <div className="p-4 rounded-xl bg-neutral-950 border border-emerald-500/30">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Option 1: Hostinger Domain Redirection (Recommended - 2 Min)
+                  </span>
+                  <span className="text-[10px] text-neutral-400 bg-neutral-900 px-2 py-0.5 rounded">Fastest</span>
+                </div>
+                <p className="text-xs text-neutral-300 mt-1.5 leading-relaxed">
+                  Hostinger hPanel me jakar <strong className="text-white">a1smartselection.sbs</strong> ko is live web application URL par redirect set karein:
+                </p>
+
+                <div className="mt-2.5 p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-between gap-2">
+                  <div className="font-mono text-[11px] text-amber-300 truncate">
+                    {window.location.origin}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(window.location.origin);
+                      setCopiedDns('origin');
+                      showToast('Live App URL copied!', 'success');
+                      setTimeout(() => setCopiedDns(null), 2000);
+                    }}
+                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-white rounded text-xs font-semibold flex items-center gap-1 flex-shrink-0"
+                  >
+                    {copiedDns === 'origin' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedDns === 'origin' ? 'Copied' : 'Copy URL'}</span>
+                  </button>
+                </div>
+
+                <div className="mt-3 text-[11px] text-neutral-400 space-y-1">
+                  <div>1. Hostinger hPanel login karein &gt; <strong>Domains</strong> &gt; <strong>a1smartselection.sbs</strong> par click karein.</div>
+                  <div>2. Left menu me <strong>"Redirects"</strong> (Domain Forwarding) par jayein.</div>
+                  <div>3. Target URL me copy kiya gaya URL paste karein aur <strong>Create</strong> dabayein.</div>
+                </div>
+              </div>
+
+              {/* Method 2: Hostinger DNS CNAME Record */}
+              <div className="p-4 rounded-xl bg-neutral-950 border border-neutral-800">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
+                  Option 2: DNS Records (CNAME Setup)
+                </span>
+                <p className="text-xs text-neutral-300 mt-1 leading-relaxed">
+                  Agar aap subdomain (jaise <strong className="text-white">app.a1smartselection.sbs</strong>) ya Cloudflare proxy use karna chahte hain:
+                </p>
+
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead>
+                      <tr className="border-b border-neutral-800 text-neutral-400 text-[11px]">
+                        <th className="pb-1.5">Type</th>
+                        <th className="pb-1.5">Name / Host</th>
+                        <th className="pb-1.5">Target Value</th>
+                        <th className="pb-1.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-900 text-neutral-200">
+                      <tr>
+                        <td className="py-2 text-amber-400 font-bold">CNAME</td>
+                        <td className="py-2">@ (or www)</td>
+                        <td className="py-2 text-neutral-300 truncate max-w-[180px]">
+                          {window.location.hostname}
+                        </td>
+                        <td className="py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(window.location.hostname);
+                              setCopiedDns('cname');
+                              showToast('CNAME Target copied!', 'success');
+                              setTimeout(() => setCopiedDns(null), 2000);
+                            }}
+                            className="px-2 py-0.5 bg-neutral-800 hover:bg-neutral-700 rounded text-[11px] text-white"
+                          >
+                            {copiedDns === 'cname' ? 'Copied' : 'Copy'}
+                          </button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-neutral-800 flex items-center justify-between">
+              <span className="text-[11px] text-neutral-500">
+                Hostinger DNS propagation 10-30 min le sakta hai.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowDomainModal(false)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-semibold"
+              >
+                Done / Close
               </button>
             </div>
           </div>
