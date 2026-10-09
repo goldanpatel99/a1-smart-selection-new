@@ -294,9 +294,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         }
       } else if (hash === 'admin') {
-        setCurrentView('admin-panel');
+        const storedUid = storage.getCurrentUserId();
+        const authedUser = users.find((u) => u.id === storedUid);
+        if (authedUser && authedUser.role === 'admin') {
+          setCurrentView('admin-panel');
+        } else {
+          setCurrentView('landing');
+          window.location.hash = '';
+        }
       } else if (hash === 'dashboard') {
-        setCurrentView('dashboard');
+        const storedUid = storage.getCurrentUserId();
+        if (storedUid) {
+          setCurrentView('dashboard');
+        } else {
+          setCurrentView('landing');
+          window.location.hash = '';
+        }
       }
     };
 

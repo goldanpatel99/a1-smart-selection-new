@@ -49,7 +49,8 @@ export const storage = {
 
   getCurrentUserId(): string | null {
     try {
-      return localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+      // Security: Session is stored in sessionStorage so closing the tab/browser automatically ends the session
+      return sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
     } catch {
       return null;
     }
@@ -58,10 +59,12 @@ export const storage = {
   setCurrentUserId(id: string | null): void {
     try {
       if (id) {
-        localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, id);
+        sessionStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, id);
       } else {
-        localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
+        sessionStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
       }
+      // Also ensure localStorage does not retain any persistent auto-login token
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
     } catch (e) {
       console.error('Failed to set current user id', e);
     }
