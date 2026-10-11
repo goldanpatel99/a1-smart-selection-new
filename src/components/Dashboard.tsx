@@ -124,7 +124,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Filter events for this photographer (or all if admin viewing dashboard)
   const myEvents = events.filter((e) =>
-    currentUser?.role === 'admin' ? true : e.photographerId === currentUser?.id
+    currentUser?.role === 'admin'
+      ? true
+      : e.photographerId === currentUser?.id ||
+        (Boolean(currentUser?.email) && (e as any).photographerEmail?.toLowerCase() === currentUser?.email?.toLowerCase())
   );
 
   const filteredEvents = myEvents.filter((e) => {
@@ -137,7 +140,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   );
 
   const totalPhotos = myEvents.reduce(
-    (acc, e) => acc + (e.photos ? e.photos.length : (e.photosCount || 0)),
+    (acc, e) => acc + Math.max(e.photosCount || 0, e.photos ? e.photos.length : 0),
     0
   );
   const completedEvents = myEvents.filter((e) => e.status === 'completed').length;
@@ -186,7 +189,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setEditingEvent(event);
     setEditTitle(event.title);
     setEditCouple(event.coupleName);
-    setEditPhone(event.clientPhone);
+    setEditPhone(event.clientPhone || '');
     setEditEventDate(event.eventDate || '');
     setEditDeadlineDate(event.deadlineDate || '');
     setEditStatus(event.status);
@@ -538,8 +541,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {filteredEvents.map((event) => {
                 const photosList = event.photos || [];
                 const foldersList = event.folders || [];
-                const selectedCount = event.selectedCount ?? photosList.filter((p) => p.isSelected).length;
-                const totalPhotos = event.photosCount ?? photosList.length;
+                const selectedCount = Math.max(
+                  event.selectedCount || 0,
+                  photosList.filter((p) => p.isSelected).length,
+                  (event.selectedPhotoIds || []).length
+                );
+                const totalPhotos = Math.max(event.photosCount || 0, photosList.length);
                 const isCopied = copiedEventId === event.id;
                 const timeLeftInfo = getEventTimeLeft(event.deadlineDate, event.status);
 
@@ -612,7 +619,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             Client: {event.coupleName} ({event.clientPhone})
                           </p>
                         </div>
-                        {event.coverPhotoUrl && (
+                        {Boolean(event.coverPhotoUrl && event.coverPhotoUrl.trim()) && (
                           <img
                             src={event.coverPhotoUrl}
                             alt="Cover"

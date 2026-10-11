@@ -41,6 +41,16 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Download production build zip for Hostinger / cPanel deployment
+app.get('/download-hostinger-build', (req, res) => {
+  const zipPath = path.join(__dirname, 'dist_hostinger.zip');
+  if (fs.existsSync(zipPath)) {
+    res.download(zipPath, 'a1smartselection-website.zip');
+  } else {
+    res.status(404).send('Build zip not found');
+  }
+});
+
 // 2. Razorpay Public Config endpoint
 app.get('/api/razorpay/config', (req, res) => {
   res.json({

@@ -4,6 +4,7 @@ import { INITIAL_ADMIN_SETTINGS, INITIAL_USERS, INITIAL_EVENTS, INITIAL_TRANSACT
 const STORAGE_KEYS = {
   USERS: 'a1_users_v6',
   CURRENT_USER_ID: 'a1_current_user_id_v6',
+  ACTIVE_EVENT_ID: 'a1_active_event_id_v6',
   EVENTS: 'a1_events_v6',
   TRANSACTIONS: 'a1_transactions_v6',
   SETTINGS: 'a1_settings_v6',
@@ -81,6 +82,26 @@ export const storage = {
     }
   },
 
+  getActiveEventId(): string | null {
+    try {
+      return sessionStorage.getItem(STORAGE_KEYS.ACTIVE_EVENT_ID) || localStorage.getItem(STORAGE_KEYS.ACTIVE_EVENT_ID);
+    } catch {
+      return null;
+    }
+  },
+
+  setActiveEventId(id: string | null): void {
+    try {
+      if (id) {
+        sessionStorage.setItem(STORAGE_KEYS.ACTIVE_EVENT_ID, id);
+        localStorage.setItem(STORAGE_KEYS.ACTIVE_EVENT_ID, id);
+      } else {
+        sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_EVENT_ID);
+        localStorage.removeItem(STORAGE_KEYS.ACTIVE_EVENT_ID);
+      }
+    } catch {}
+  },
+
   getEvents(): WeddingEvent[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.EVENTS);
@@ -88,7 +109,13 @@ export const storage = {
         localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(INITIAL_EVENTS));
         return INITIAL_EVENTS;
       }
-      return JSON.parse(data);
+      const parsed: WeddingEvent[] = JSON.parse(data);
+      return parsed.map((e) => ({
+        ...e,
+        photos: e.photos || [],
+        folders: e.folders || [],
+        photosCount: Math.max(e.photosCount || 0, (e.photos || []).length),
+      }));
     } catch {
       return INITIAL_EVENTS;
     }
@@ -102,7 +129,8 @@ export const storage = {
       try {
         const lightweight = events.map((e) => ({
           ...e,
-          photos: e.photos.map((p) => ({
+          photosCount: Math.max(e.photosCount || 0, (e.photos || []).length),
+          photos: (e.photos || []).map((p) => ({
             ...p,
             url: '', // strip heavy base64 from localStorage copy
             thumbnailUrl: '',

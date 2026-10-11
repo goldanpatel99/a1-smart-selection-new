@@ -50,9 +50,13 @@ export const firebaseService = {
       // Strip massive base64 photo arrays from parent document so it NEVER hits 1MB limit
       const { photos, ...meta } = event;
       const selectedIds = (photos || []).filter((p) => p.isSelected).map((p) => p.id);
+      const totalCount = Math.max(
+        event.photosCount || 0,
+        photos ? photos.length : 0
+      );
       const cleanEventMeta = {
         ...meta,
-        photosCount: photos ? photos.length : (event.photosCount || 0),
+        photosCount: totalCount,
         selectedCount: selectedIds.length,
         selectedPhotoIds: selectedIds,
       };
@@ -78,6 +82,21 @@ export const firebaseService = {
       if (err?.code !== 'resource-exhausted') {
         console.warn('Error updating event selections in Firestore:', err?.message || err);
       }
+    }
+  },
+
+  // Update total photos count in Firestore
+  updateEventPhotosCount: async (eventId: string, totalPhotosCount: number) => {
+    try {
+      await setDoc(
+        doc(db, 'events', eventId),
+        {
+          photosCount: totalPhotosCount,
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Error updating photosCount in Firestore:', err);
     }
   },
 
@@ -111,16 +130,6 @@ export const firebaseService = {
           )
         );
       }
-
-      // Update parent event photo count in Firestore
-      await setDoc(
-        doc(db, 'events', eventId),
-        {
-          photosCount: photos.length,
-          selectedCount: photos.filter((p) => p.isSelected).length,
-        },
-        { merge: true }
-      );
     } catch (err) {
       console.error('Error saving photos to Firestore subcollection:', err);
     }

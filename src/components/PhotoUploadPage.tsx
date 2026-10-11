@@ -131,52 +131,59 @@ export const PhotoUploadPage: React.FC = () => {
   const [showConfirmationGallery, setShowConfirmationGallery] = useState(false);
   const [confirmationFilterFolder, setConfirmationFilterFolder] = useState<string>('all');
 
-  if (!activeEvent) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-16 text-center">
-        <h2 className="text-xl font-bold text-white mb-2">No Event Selected</h2>
-        <button
-          onClick={() => navigateTo('dashboard')}
-          className="px-4 py-2 bg-neutral-800 text-white rounded-xl text-xs hover:bg-neutral-700 transition"
-        >
-          Return to Dashboard
-        </button>
-      </div>
-    );
-  }
-
-  const eventFolders = activeEvent.folders || [];
-  const eventPhotos = activeEvent.photos || [];
+  const eventFolders = activeEvent?.folders || [];
+  const eventPhotos = activeEvent?.photos || [];
 
   // Capacity limit based on event tier (2500 Standard, 5000 Premium)
   const MAX_EVENT_CAPACITY =
-    activeEvent.maxPhotoCapacity || (activeEvent.pointTier === 'premium' ? 5000 : 2500);
+    activeEvent?.maxPhotoCapacity || (activeEvent?.pointTier === 'premium' ? 5000 : 2500);
+
+  // Auto-synthesize folders if eventFolders array is empty but photos have folderName
+  const effectiveFolders = useMemo(() => {
+    if (eventFolders.length > 0) return eventFolders;
+    if (eventPhotos.length === 0) return [];
+    const folderNames = Array.from(new Set(eventPhotos.map((p) => (p.folderName || 'Photos').trim())));
+    return folderNames.map((name, idx) => ({
+      id: `fld-auto-${idx}-${name.toLowerCase().replace(/\s+/g, '-')}`,
+      name,
+      visible: true,
+      order: idx,
+    }));
+  }, [eventFolders, eventPhotos]);
 
   // Grouped photos by folder for the "All Folders" separated view
   const photosByFolder = useMemo(() => {
     const map = new Map<string, typeof eventPhotos>();
-    eventFolders.forEach((f) => map.set(f.id, []));
+    effectiveFolders.forEach((f) => map.set(f.id, []));
 
     eventPhotos.forEach((photo) => {
-      const list = map.get(photo.folderId);
+      let targetId = photo.folderId;
+      if (!map.has(targetId)) {
+        // Fallback: match by folder name
+        const matched = effectiveFolders.find(
+          (f) => f.name.toLowerCase() === (photo.folderName || '').toLowerCase().trim()
+        );
+        if (matched) {
+          targetId = matched.id;
+        } else if (effectiveFolders.length > 0) {
+          targetId = effectiveFolders[0].id;
+        }
+      }
+      const list = map.get(targetId);
       if (list) {
         list.push(photo);
       } else {
-        // Unmapped or newly added folder
-        if (!map.has(photo.folderId)) {
-          map.set(photo.folderId, []);
-        }
-        map.get(photo.folderId)!.push(photo);
+        map.set(targetId, [photo]);
       }
     });
 
     return map;
-  }, [eventFolders, eventPhotos]);
+  }, [effectiveFolders, eventPhotos]);
 
   // Current folder when a single folder is selected
   const currentSingleFolder =
     selectedFolderId !== 'all'
-      ? eventFolders.find((f) => f.id === selectedFolderId)
+      ? effectiveFolders.find((f) => f.id === selectedFolderId)
       : null;
 
   const currentFolderPhotos =
@@ -186,7 +193,7 @@ export const PhotoUploadPage: React.FC = () => {
 
   const handleCreateFolder = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFolderName.trim()) return;
+    if (!activeEvent || !newFolderName.trim()) return;
     addFolder(activeEvent.id, newFolderName.trim());
     setNewFolderName('');
     setShowAddFolderInput(false);
@@ -276,7 +283,9 @@ export const PhotoUploadPage: React.FC = () => {
 
         // 2. Incremental batch sync into active event state!
         // This makes photos and folders appear on the website in real time without waiting for full completion!
-        addPhotosToEvent(activeEvent.id, validPhotos);
+        if (activeEvent) {
+          addPhotosToEvent(activeEvent.id, validPhotos);
+        }
       }
 
       totalProcessedSoFar += chunk.length;
@@ -447,6 +456,20 @@ export const PhotoUploadPage: React.FC = () => {
   const confirmedFolderNames = useMemo(() => {
     return Array.from(new Set(confirmedUploads.map((c) => c.folderName)));
   }, [confirmedUploads]);
+
+  if (!activeEvent) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-16 text-center">
+        <h2 className="text-xl font-bold text-white mb-2">No Event Selected</h2>
+        <button
+          onClick={() => navigateTo('dashboard')}
+          className="px-4 py-2 bg-neutral-800 text-white rounded-xl text-xs hover:bg-neutral-700 transition"
+        >
+          Return to Dashboard
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in">
@@ -873,12 +896,18 @@ export const PhotoUploadPage: React.FC = () => {
                     key={item.id}
                     className="group relative aspect-square rounded-xl overflow-hidden bg-neutral-950 border border-emerald-500/40 shadow-sm animate-in fade-in zoom-in-95"
                   >
-                    <img
-                      src={item.thumbnailUrl || item.url}
-                      alt={item.filename}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      loading="lazy"
-                    />
+                    {(item.thumbnailUrl || item.url) ? (
+                      <img
+                        src={(item.thumbnailUrl || item.url) || undefined}
+                        alt={item.filename}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-600">
+                        <ImageIcon className="w-5 h-5 opacity-40" />
+                      </div>
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none" />
 
                     {/* Green Verification Checkmark Badge */}
@@ -913,12 +942,12 @@ export const PhotoUploadPage: React.FC = () => {
                       Folders & Photos
                     </h2>
                     <span className="text-xs px-2 py-0.5 bg-neutral-800 text-neutral-300 rounded-full font-mono">
-                      {eventPhotos.length} Total Photos • {eventFolders.length} Folders
+                      {eventPhotos.length} Total Photos • {effectiveFolders.length} Folders
                     </span>
                   </div>
                 </div>
 
-                {eventFolders.length === 0 ? (
+                {effectiveFolders.length === 0 ? (
                   <div className="text-center py-12 bg-neutral-900/40 border border-neutral-800 rounded-3xl">
                     <FolderOpen className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
                     <p className="text-xs text-neutral-400">Abhi tak koi photo folder upload nahi hua hai.</p>
@@ -928,7 +957,7 @@ export const PhotoUploadPage: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-8">
-                    {eventFolders.map((folder) => {
+                    {effectiveFolders.map((folder) => {
                       const photosInThisFolder = photosByFolder.get(folder.id) || [];
 
                       return (
@@ -977,12 +1006,18 @@ export const PhotoUploadPage: React.FC = () => {
                                   key={photo.id}
                                   className="group relative rounded-2xl overflow-hidden aspect-[4/5] bg-neutral-950 border border-neutral-800 hover:border-amber-500/40 transition shadow-sm"
                                 >
-                                  <img
-                                    src={photo.thumbnailUrl || photo.url}
-                                    alt={photo.filename}
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                    loading="lazy"
-                                  />
+                                  {(photo.thumbnailUrl || photo.url) ? (
+                                    <img
+                                      src={(photo.thumbnailUrl || photo.url) || undefined}
+                                      alt={photo.filename}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                      loading="lazy"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-600">
+                                      <ImageIcon className="w-6 h-6 opacity-40" />
+                                    </div>
+                                  )}
                                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
                                   {/* Delete photo button */}
@@ -1052,12 +1087,18 @@ export const PhotoUploadPage: React.FC = () => {
                         key={photo.id}
                         className="group relative rounded-2xl overflow-hidden aspect-[4/5] bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 transition shadow-sm"
                       >
-                        <img
-                          src={photo.thumbnailUrl || photo.url}
-                          alt={photo.filename}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          loading="lazy"
-                        />
+                        {(photo.thumbnailUrl || photo.url) ? (
+                          <img
+                            src={(photo.thumbnailUrl || photo.url) || undefined}
+                            alt={photo.filename}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-600">
+                            <ImageIcon className="w-6 h-6 opacity-40" />
+                          </div>
+                        )}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
                         <button

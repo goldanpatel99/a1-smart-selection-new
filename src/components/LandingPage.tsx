@@ -254,11 +254,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                         : 'border-neutral-800 hover:border-neutral-700'
                     }`}
                   >
-                    <img
-                      src={photo.url}
-                      alt={photo.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
+                    {photo.url ? (
+                      <img
+                        src={photo.url}
+                        alt={photo.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                    ) : null}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40" />
 
                     {/* Folder Badge */}
@@ -747,8 +749,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </h4>
               <p className="text-xs text-neutral-400 leading-relaxed">
                 Starting mein har naye photographer ke 0 points hote hain. Aap apni zaroorat ke anusaar
-                1 point (₹110), 5 points (₹520) ya 20 points (₹1,990) UPI se recharge kar sakte hain.
-                Admin chahe toh admin portal se free points bhi add kar sakta hai.
+                Standard Points (₹149 / 2,500 photos limit) ya Premium Points (₹249 / 5,000 photos limit) UPI se recharge kar sakte hain.
+                Admin chahe toh admin portal se free points bhi credit kar sakta hai.
               </p>
             </div>
           </div>

@@ -140,8 +140,8 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({
     currentUser?.premiumPoints !== undefined ? currentUser.premiumPoints : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
-      <div className="relative w-full max-w-2xl bg-neutral-900 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
+      <div className="relative w-full max-w-2xl bg-neutral-900 border border-neutral-800 rounded-3xl p-5 sm:p-8 shadow-2xl max-h-[94vh] overflow-y-auto">
         {/* Background Ambient Glow */}
         {activeTier === 'premium' ? (
           <>
@@ -291,21 +291,23 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({
             </div>
 
             {/* Tier Switcher Tabs */}
-            <div className="grid grid-cols-2 gap-2 p-1.5 bg-neutral-950 rounded-2xl border border-neutral-800 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-1.5 bg-neutral-950 rounded-2xl border border-neutral-800 mb-5">
               {/* Tab 1: Standard Point (2,500 photos @ ₹149) */}
               <button
                 type="button"
                 onClick={() => handleTabChange('standard')}
-                className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                className={`py-3 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center justify-start sm:justify-center gap-3 ${
                   activeTier === 'standard'
                     ? 'bg-neutral-800 text-amber-400 border border-amber-500/30 shadow'
                     : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
               >
-                <Coins className="w-4 h-4 text-amber-400" />
+                <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center flex-shrink-0">
+                  <Coins className="w-4 h-4 text-amber-400" />
+                </div>
                 <div className="text-left">
-                  <div className="leading-tight">Standard Point</div>
-                  <div className="text-[10px] text-neutral-400 font-normal">
+                  <div className="leading-tight text-white font-bold">Standard Point</div>
+                  <div className="text-[11px] text-neutral-400 font-normal mt-0.5">
                     2,500 photos / pt • ₹149/pt
                   </div>
                 </div>
@@ -315,7 +317,7 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({
               <button
                 type="button"
                 onClick={() => handleTabChange('premium')}
-                className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 relative overflow-hidden group ${
+                className={`py-3 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center justify-start sm:justify-center gap-3 relative overflow-hidden group ${
                   activeTier === 'premium'
                     ? 'bg-gradient-to-r from-purple-950/90 via-neutral-900 to-amber-950/90 text-white border-2 border-amber-400 shadow-xl shadow-amber-500/25 ring-2 ring-amber-400/40'
                     : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
@@ -328,19 +330,18 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({
                     <div className="absolute inset-[1px] bg-neutral-950/90 rounded-xl" />
                   </div>
                 )}
-                <div className="relative z-10 flex items-center gap-2">
-                  <span className="relative flex h-4 w-4 items-center justify-center">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                    <Zap className="w-4 h-4 text-amber-400 fill-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.9)]" />
-                  </span>
+                <div className="relative z-10 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                    <Zap className="w-4 h-4 text-amber-400 fill-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-pulse" />
+                  </div>
                   <div className="text-left">
                     <div className="flex items-center gap-1.5 leading-tight">
                       <span className="text-amber-300 font-extrabold">⚡ Premium Point</span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/30 text-amber-200 border border-amber-400/40 font-mono">
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/30 text-amber-200 border border-amber-400/40 font-mono font-bold">
                         5K PHOTOS
                       </span>
                     </div>
-                    <div className="text-[10px] text-amber-200/80 font-normal">
+                    <div className="text-[11px] text-amber-200/80 font-normal mt-0.5">
                       5,000 photos / pt • ₹249/pt
                     </div>
                   </div>
@@ -350,7 +351,7 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({
 
             {/* 3 Variations Grid */}
             <div className="mb-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {tierPackages.map((pkg) => {
                   const isSelected = selectedPackageId === pkg.id;
                   const perPointRate = Math.round(pkg.priceRupees / pkg.points);
@@ -362,7 +363,7 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({
                         setSelectedPackageId(pkg.id);
                         setPaymentError(null);
                       }}
-                      className={`relative p-4 rounded-2xl border cursor-pointer transition-all duration-200 flex flex-col justify-between overflow-hidden ${
+                      className={`relative p-4 rounded-2xl border cursor-pointer transition-all duration-200 flex flex-col justify-between ${
                         isSelected
                           ? activeTier === 'premium'
                             ? 'bg-gradient-to-br from-purple-950/60 via-neutral-900 to-amber-950/50 border-amber-400 ring-2 ring-amber-400/50 shadow-2xl shadow-amber-500/20 scale-[1.02]'
@@ -370,16 +371,18 @@ export const BuyPointsModal: React.FC<BuyPointsModalProps> = ({
                           : 'bg-neutral-950/70 border-neutral-800 hover:border-neutral-700'
                       }`}
                     >
-                      {/* Popular / Savings Badge */}
+                      {/* Popular / Savings Badge inside card header */}
                       {pkg.savingsText && (
-                        <div
-                          className={`absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full shadow ${
-                            activeTier === 'premium'
-                              ? 'bg-gradient-to-r from-amber-400 to-purple-400 text-neutral-950'
-                              : 'bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950'
-                          }`}
-                        >
-                          {pkg.savingsText}
+                        <div className="mb-2">
+                          <span
+                            className={`inline-block text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full shadow ${
+                              activeTier === 'premium'
+                                ? 'bg-gradient-to-r from-amber-400 to-purple-400 text-neutral-950'
+                                : 'bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950'
+                            }`}
+                          >
+                            {pkg.savingsText}
+                          </span>
                         </div>
                       )}
 

@@ -17,9 +17,14 @@ import {
   CheckCircle2,
   Loader2,
   Cpu,
+  FileText,
+  X,
+  Maximize2,
+  Image as ImageIcon,
 } from 'lucide-react';
 import {
   generateLightroomFilenames,
+  downloadFile,
 } from '../utils/batGenerator';
 import {
   downloadExportWithWorker,
@@ -33,6 +38,7 @@ export const SelectionResultsPage: React.FC = () => {
   const [includeExtension, setIncludeExtension] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFolderFilter, setSelectedFolderFilter] = useState('all');
+  const [previewPhoto, setPreviewPhoto] = useState<any | null>(null);
 
   // Web Worker batch processing state
   const [isExporting, setIsExporting] = useState(false);
@@ -40,31 +46,37 @@ export const SelectionResultsPage: React.FC = () => {
   const [exportProgress, setExportProgress] = useState<number>(0);
   const [exportStatusText, setExportStatusText] = useState<string>('');
 
-  if (!activeEvent) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-16 text-center">
-        <h2 className="text-xl font-bold text-white mb-2">No Event Selected</h2>
-        <button
-          onClick={() => navigateTo('dashboard')}
-          className="px-4 py-2 bg-neutral-800 text-white rounded-xl text-xs"
-        >
-          Return to Dashboard
-        </button>
-      </div>
-    );
-  }
+  const allPhotos = activeEvent?.photos || [];
+  const allFolders = activeEvent?.folders || [];
 
-  const allPhotos = activeEvent.photos || [];
-  const allFolders = activeEvent.folders || [];
+  const effectiveFolders = useMemo(() => {
+    if (allFolders.length > 0) return allFolders;
+    if (allPhotos.length === 0) return [];
+    const folderNames = Array.from(new Set(allPhotos.map((p) => (p.folderName || 'Photos').trim())));
+    return folderNames.map((name, idx) => ({
+      id: `fld-auto-${idx}-${name.toLowerCase().replace(/\s+/g, '-')}`,
+      name,
+      visible: true,
+      order: idx,
+    }));
+  }, [allFolders, allPhotos]);
+
   const selectedPhotos = allPhotos.filter((p) => p.isSelected);
-  const totalPhotos = allPhotos.length;
+  const totalPhotos = Math.max(activeEvent?.photosCount || 0, allPhotos.length);
   const pctSelected = totalPhotos > 0 ? Math.round((selectedPhotos.length / totalPhotos) * 100) : 0;
 
   // Folder breakdown
-  const folderStats = allFolders.map((folder) => {
-    const total = allPhotos.filter((p) => p.folderId === folder.id).length;
+  const folderStats = effectiveFolders.map((folder) => {
+    const total = allPhotos.filter(
+      (p) =>
+        p.folderId === folder.id ||
+        (p.folderName && p.folderName.toLowerCase().trim() === folder.name.toLowerCase().trim())
+    ).length;
     const selected = allPhotos.filter(
-      (p) => p.folderId === folder.id && p.isSelected
+      (p) =>
+        (p.folderId === folder.id ||
+          (p.folderName && p.folderName.toLowerCase().trim() === folder.name.toLowerCase().trim())) &&
+        p.isSelected
     ).length;
     return {
       id: folder.id,
@@ -76,7 +88,7 @@ export const SelectionResultsPage: React.FC = () => {
   });
 
   const handleDownloadBat = async () => {
-    if (isExporting || selectedPhotos.length === 0) return;
+    if (!activeEvent || isExporting || selectedPhotos.length === 0) return;
     setIsExporting(true);
     setExportType('bat');
     setExportProgress(0);
@@ -99,7 +111,7 @@ export const SelectionResultsPage: React.FC = () => {
   };
 
   const handleDownloadSh = async () => {
-    if (isExporting || selectedPhotos.length === 0) return;
+    if (!activeEvent || isExporting || selectedPhotos.length === 0) return;
     setIsExporting(true);
     setExportType('sh');
     setExportProgress(0);
@@ -122,7 +134,7 @@ export const SelectionResultsPage: React.FC = () => {
   };
 
   const handleDownloadCsv = async () => {
-    if (isExporting || selectedPhotos.length === 0) return;
+    if (!activeEvent || isExporting || selectedPhotos.length === 0) return;
     setIsExporting(true);
     setExportType('csv');
     setExportProgress(0);
@@ -145,11 +157,23 @@ export const SelectionResultsPage: React.FC = () => {
   };
 
   const handleCopyLightroom = () => {
+    if (!activeEvent) return;
     const filenames = generateLightroomFilenames(activeEvent, includeExtension);
     navigator.clipboard.writeText(filenames);
     setCopiedLightroom(true);
     showToast('Filenames copied for Lightroom search bar!', 'success');
     setTimeout(() => setCopiedLightroom(false), 2500);
+  };
+
+  const handleDownloadTxt = () => {
+    if (!activeEvent || selectedPhotos.length === 0) return;
+    const filenames = generateLightroomFilenames(activeEvent, includeExtension);
+    downloadFile(
+      filenames,
+      `A1_Selected_${activeEvent.slug || activeEvent.id}.txt`,
+      'text/plain'
+    );
+    showToast('Text file of selected filenames downloaded!', 'success');
   };
 
   // Filtered view of selected photos
@@ -162,6 +186,20 @@ export const SelectionResultsPage: React.FC = () => {
     }
     return true;
   });
+
+  if (!activeEvent) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-16 text-center">
+        <h2 className="text-xl font-bold text-white mb-2">No Event Selected</h2>
+        <button
+          onClick={() => navigateTo('dashboard')}
+          className="px-4 py-2 bg-neutral-800 text-white rounded-xl text-xs hover:bg-neutral-700 transition"
+        >
+          Return to Dashboard
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -411,27 +449,39 @@ export const SelectionResultsPage: React.FC = () => {
               : 'No photos selected yet.'}
           </div>
 
-          <button
-            onClick={handleCopyLightroom}
-            disabled={selectedPhotos.length === 0}
-            className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
-              copiedLightroom
-                ? 'bg-emerald-600 text-white'
-                : 'bg-neutral-800 hover:bg-neutral-750 text-white border border-neutral-700'
-            }`}
-          >
-            {copiedLightroom ? (
-              <>
-                <Check className="w-4 h-4" />
-                <span>Copied to Clipboard!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-4 h-4 text-amber-400" />
-                <span>Copy Lightroom Filenames</span>
-              </>
-            )}
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              onClick={handleCopyLightroom}
+              disabled={selectedPhotos.length === 0}
+              className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                copiedLightroom
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-neutral-800 hover:bg-neutral-750 text-white border border-neutral-700'
+              }`}
+            >
+              {copiedLightroom ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 text-amber-400" />
+                  <span>Copy Filenames</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleDownloadTxt}
+              disabled={selectedPhotos.length === 0}
+              className="py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors bg-neutral-800 hover:bg-neutral-750 text-white border border-neutral-700 disabled:opacity-50 cursor-pointer"
+              title="Download as .TXT list"
+            >
+              <FileText className="w-4 h-4 text-amber-400" />
+              <span>Download .TXT</span>
+            </button>
+          </div>
         </div>
 
         {/* CSV Summary Box */}
@@ -558,16 +608,27 @@ export const SelectionResultsPage: React.FC = () => {
             {displayedPhotos.map((photo) => (
               <div
                 key={photo.id}
-                className="group relative rounded-xl overflow-hidden aspect-[4/5] bg-neutral-950 border border-neutral-800"
+                onClick={() => setPreviewPhoto(photo)}
+                className="group relative rounded-xl overflow-hidden aspect-[4/5] bg-neutral-950 border border-neutral-800 hover:border-amber-500/50 cursor-pointer transition-all hover:scale-[1.02]"
+                title="Click to view full photo"
               >
-                <img
-                  src={photo.url}
-                  alt={photo.filename}
-                  className="w-full h-full object-cover"
-                />
+                {(photo.thumbnailUrl || photo.url) ? (
+                  <img
+                    src={(photo.thumbnailUrl || photo.url) || undefined}
+                    alt={photo.filename}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-neutral-900 text-neutral-600">
+                    <ImageIcon className="w-6 h-6 opacity-40 mb-1" />
+                    <span className="text-[9px] font-mono">{photo.filename}</span>
+                  </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-80" />
 
-                <div className="absolute top-1.5 right-1.5 p-1 rounded-full bg-rose-500 text-white">
+                <div className="absolute top-1.5 right-1.5 p-1 rounded-full bg-rose-500 text-white shadow-md">
                   <Heart className="w-3 h-3 fill-white" />
                 </div>
 
@@ -582,6 +643,57 @@ export const SelectionResultsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Photographer Photo Zoom / Inspection Modal */}
+      {previewPhoto && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 animate-in fade-in select-none">
+          <div className="flex items-center justify-between text-white z-10 max-w-5xl mx-auto w-full">
+            <div>
+              <h4 className="font-mono font-bold text-sm text-white">
+                {previewPhoto.filename}
+              </h4>
+              <p className="text-xs text-neutral-400">
+                Folder: <span className="text-amber-400 font-medium">{previewPhoto.folderName}</span>
+                {previewPhoto.sizeBytes ? ` • ${(previewPhoto.sizeBytes / 1024).toFixed(0)} KB` : ''}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <a
+                href={previewPhoto.url}
+                download={previewPhoto.filename}
+                className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold rounded-xl border border-neutral-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-amber-400" />
+                <span>Save Image</span>
+              </a>
+              <button
+                onClick={() => setPreviewPhoto(null)}
+                className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 flex items-center justify-center p-2 sm:p-4 overflow-hidden">
+            {previewPhoto.url ? (
+              <img
+                src={previewPhoto.url}
+                alt={previewPhoto.filename}
+                className="max-h-[78vh] max-w-[92vw] object-contain rounded-2xl shadow-2xl border border-white/10"
+              />
+            ) : (
+              <div className="text-neutral-500 text-xs">Image unavailable</div>
+            )}
+          </div>
+
+          {previewPhoto.clientComment && (
+            <div className="max-w-xl mx-auto w-full p-3 rounded-xl bg-neutral-900 border border-amber-500/30 text-amber-200 text-xs text-center">
+              Client Comment: "{previewPhoto.clientComment}"
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

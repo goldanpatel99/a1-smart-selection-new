@@ -24,9 +24,11 @@ import {
   ShieldCheck,
   Instagram,
   PhoneCall,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { DynamicSecurityWatermark } from './DynamicSecurityWatermark';
 import { useOfflineSync } from '../hooks/useOfflineSync';
+import { getClientGalleryUrl } from '../utils/domainConfig';
 
 export const ClientGallery: React.FC = () => {
   const { activeEvent, users, togglePhotoSelection, submitClientSelection, showToast, navigateTo } = useApp();
@@ -83,47 +85,47 @@ export const ClientGallery: React.FC = () => {
     };
   }, [showToast]);
 
-  if (!activeEvent) {
-    return (
-      <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 text-center">
-        <div className="max-w-md p-8 bg-neutral-900 border border-neutral-800 rounded-3xl shadow-xl">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto mb-4">
-            <Camera className="w-6 h-6" />
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">Private Client Gallery</h2>
-          <p className="text-xs text-neutral-400 leading-relaxed">
-            Aapka wedding event link filhaal available nahi hai ya complete ho chuka hai. Kripya apne studio/photographer se contact karein.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   // Filter visible folders only
-  const allPhotos = activeEvent.photos || [];
-  const allFolders = activeEvent.folders || [];
-  const visibleFolders = allFolders.filter((f) => f.visible !== false);
+  const allPhotos = activeEvent?.photos || [];
+  const allFolders = activeEvent?.folders || [];
+
+  const effectiveFolders = useMemo(() => {
+    if (allFolders.length > 0) return allFolders;
+    if (allPhotos.length === 0) return [];
+    const folderNames = Array.from(new Set(allPhotos.map((p) => (p.folderName || 'Photos').trim())));
+    return folderNames.map((name, idx) => ({
+      id: `fld-auto-${idx}-${name.toLowerCase().replace(/\s+/g, '-')}`,
+      name,
+      visible: true,
+      order: idx,
+    }));
+  }, [allFolders, allPhotos]);
+
+  const visibleFolders = effectiveFolders.filter((f) => f.visible !== false);
 
   // Filtered photos
   const filteredPhotos = useMemo(() => {
     return allPhotos.filter((photo) => {
       // Folder filter
-      if (activeFolderId !== 'all' && photo.folderId !== activeFolderId) {
-        return false;
+      if (activeFolderId !== 'all') {
+        const matchesId = photo.folderId === activeFolderId;
+        const matchedFld = visibleFolders.find((f) => f.id === activeFolderId);
+        const matchesName = matchedFld && photo.folderName && photo.folderName.toLowerCase().trim() === matchedFld.name.toLowerCase().trim();
+        if (!matchesId && !matchesName) return false;
       }
       // Status filter
       if (filterMode === 'selected' && !photo.isSelected) return false;
       if (filterMode === 'unselected' && photo.isSelected) return false;
       return true;
     });
-  }, [allPhotos, activeFolderId, filterMode]);
+  }, [allPhotos, activeFolderId, filterMode, visibleFolders]);
 
   const selectedCount = allPhotos.filter((p) => p.isSelected).length;
-  const maxLimit = activeEvent.maxSelectionLimit;
+  const maxLimit = activeEvent?.maxSelectionLimit;
   const isLimitReached = !!maxLimit && selectedCount >= maxLimit;
 
   // Live Album Estimator (1 Sheet = 1 Page, e.g. 6 photos = 1 sheet)
-  const photosPerSheet = activeEvent.photosPerSheet || 6;
+  const photosPerSheet = activeEvent?.photosPerSheet || 6;
   const estimatedSheets = selectedCount > 0 ? Math.ceil(selectedCount / photosPerSheet) : 0;
   const estimatedPages = estimatedSheets; // 1 sheet = 1 page as requested
 
@@ -135,6 +137,9 @@ export const ClientGallery: React.FC = () => {
     seconds: number;
     isExpired: boolean;
   }>(() => {
+    if (!activeEvent?.deadlineDate) {
+      return { days: 0, hours: 0, minutes: 0, seconds: 0, isExpired: false };
+    }
     const deadlineTime = new Date(`${activeEvent.deadlineDate}T23:59:59`).getTime();
     const now = Date.now();
     const diff = Math.max(0, deadlineTime - now);
@@ -148,6 +153,7 @@ export const ClientGallery: React.FC = () => {
   });
 
   useEffect(() => {
+    if (!activeEvent?.deadlineDate) return;
     const tick = () => {
       const deadlineTime = new Date(`${activeEvent.deadlineDate}T23:59:59`).getTime();
       const now = Date.now();
@@ -170,10 +176,11 @@ export const ClientGallery: React.FC = () => {
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [activeEvent.deadlineDate]);
+  }, [activeEvent?.deadlineDate]);
 
   // Keyboard navigation for Lightbox
   useEffect(() => {
+    if (!activeEvent) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (lightboxIndex === null) return;
       if (e.key === 'Escape') setLightboxIndex(null);
@@ -192,30 +199,59 @@ export const ClientGallery: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxIndex, filteredPhotos, activeEvent.id]);
+  }, [lightboxIndex, filteredPhotos, activeEvent?.id, togglePhotoSelection]);
 
   const handleFinishSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!activeEvent) return;
     submitClientSelection(activeEvent.id, clientNotes);
     setIsSubmitted(true);
     setShowFinishModal(false);
   };
 
   const handleWhatsAppPhotographer = () => {
+    if (!activeEvent) return;
     const text = encodeURIComponent(
       `Namaste! Humne "${activeEvent.title}" ke photos ki selection complete kar li hai (Total: ${selectedCount} photos selected).\n\nNotes: ${clientNotes || 'Sabhi selected photos album ke liye final hain.'}\n\nKripya check karke confirmation dein. Dhanyawaad!`
     );
-    const phone = activeEvent.clientPhone.replace(/[^0-9]/g, '');
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+    const targetPhone = (activeEvent.studioPhone || activeEvent.clientPhone || '').replace(/[^0-9]/g, '');
+    const waUrl = targetPhone ? `https://wa.me/${targetPhone}?text=${text}` : `https://wa.me/?text=${text}`;
+    window.open(waUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleShareGallery = () => {
+    if (!activeEvent) return;
+    const url = getClientGalleryUrl(activeEvent.slug || activeEvent.id);
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    showToast('🔗 Gallery link copied! Share with family or partner.', 'success');
+    setTimeout(() => setCopiedLink(false), 2500);
   };
 
   // Calculate days left
   const daysLeft = useMemo(() => {
+    if (!activeEvent?.deadlineDate) return 0;
     const deadline = new Date(activeEvent.deadlineDate).getTime();
     const now = new Date().getTime();
     const diff = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
     return diff > 0 ? diff : 0;
-  }, [activeEvent.deadlineDate]);
+  }, [activeEvent?.deadlineDate]);
+
+  if (!activeEvent) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 text-center">
+        <div className="max-w-md p-8 bg-neutral-900 border border-neutral-800 rounded-3xl shadow-xl">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto mb-4">
+            <Camera className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Private Client Gallery</h2>
+          <p className="text-xs text-neutral-400 leading-relaxed">
+            Aapka wedding event link filhaal available nahi hai ya complete ho chuka hai. Kripya apne studio/photographer se contact karein.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-28">
@@ -406,6 +442,24 @@ export const ClientGallery: React.FC = () => {
             </div>
 
             <button
+              onClick={handleShareGallery}
+              className="px-3.5 py-2.5 rounded-xl font-bold text-xs bg-neutral-900 hover:bg-neutral-850 text-neutral-300 hover:text-white border border-neutral-800 flex items-center gap-1.5 transition-all cursor-pointer shadow"
+              title="Copy gallery link to share with family or partner"
+            >
+              {copiedLink ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline text-emerald-400">Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Share</span>
+                </>
+              )}
+            </button>
+
+            <button
               onClick={() => setShowFinishModal(true)}
               className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-all ${
                 isSubmitted
@@ -551,15 +605,23 @@ export const ClientGallery: React.FC = () => {
                       : 'border-neutral-800 hover:border-neutral-700'
                   }`}
                 >
-                  <img
-                    src={photo.url}
-                    alt={photo.filename}
-                    loading="lazy"
-                    onContextMenu={(e) => e.preventDefault()}
-                    onDragStart={(e) => e.preventDefault()}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 select-none pointer-events-none"
-                    style={{ WebkitTouchCallout: 'none' }}
-                  />
+                  {(photo.thumbnailUrl || photo.url) ? (
+                    <img
+                      src={(photo.thumbnailUrl || photo.url) || undefined}
+                      alt={photo.filename}
+                      loading="lazy"
+                      decoding="async"
+                      onContextMenu={(e) => e.preventDefault()}
+                      onDragStart={(e) => e.preventDefault()}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 select-none pointer-events-none"
+                      style={{ WebkitTouchCallout: 'none' }}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-neutral-900 text-neutral-600">
+                      <ImageIcon className="w-8 h-8 opacity-40 mb-1" />
+                      <span className="text-[10px] font-mono text-neutral-500">{photo.filename}</span>
+                    </div>
+                  )}
 
                   {/* Studio Logo Watermark in Bottom-Right Corner Only */}
                   {photographer?.enableAntiScreenshot !== false && (
@@ -707,14 +769,21 @@ export const ClientGallery: React.FC = () => {
             )}
 
             <div className="relative max-h-[82vh] max-w-[95vw] overflow-hidden rounded-2xl shadow-2xl flex items-center justify-center">
-              <img
-                src={filteredPhotos[lightboxIndex].url}
-                alt={filteredPhotos[lightboxIndex].filename}
-                onContextMenu={(e) => e.preventDefault()}
-                onDragStart={(e) => e.preventDefault()}
-                className="max-h-[80vh] sm:max-h-[82vh] max-w-[94vw] object-contain rounded-2xl transition-all select-none"
-                style={{ WebkitTouchCallout: 'none' }}
-              />
+              {filteredPhotos[lightboxIndex]?.url ? (
+                <img
+                  src={filteredPhotos[lightboxIndex].url}
+                  alt={filteredPhotos[lightboxIndex].filename}
+                  onContextMenu={(e) => e.preventDefault()}
+                  onDragStart={(e) => e.preventDefault()}
+                  className="max-h-[80vh] sm:max-h-[82vh] max-w-[94vw] object-contain rounded-2xl transition-all select-none"
+                  style={{ WebkitTouchCallout: 'none' }}
+                />
+              ) : (
+                <div className="p-12 text-center text-neutral-500">
+                  <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p className="text-xs">Image preview not available</p>
+                </div>
+              )}
 
               {/* Clean Studio Watermark in Bottom-Right Corner Only */}
               {photographer?.enableAntiScreenshot !== false && (

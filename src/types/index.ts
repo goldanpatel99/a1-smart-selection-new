@@ -30,6 +30,7 @@ export interface WeddingEvent {
   clientPhone?: string;
   clientEmail?: string;
   photographerId: string;
+  photographerEmail?: string;
   studioName: string;
   status: 'draft' | 'active' | 'completed' | 'expired';
   eventDate: string;

@@ -60,6 +60,38 @@ export const idbStorage = {
     }
   },
 
+  async getAllEventsPhotoCounts(): Promise<Map<string, { count: number; coverUrl?: string; folders: string[] }>> {
+    try {
+      const db = await getDB();
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.getAll();
+
+      return new Promise((resolve) => {
+        request.onsuccess = () => {
+          const all = (request.result || []) as Array<Photo & { eventId: string }>;
+          const map = new Map<string, { count: number; coverUrl?: string; folders: string[] }>();
+          for (const item of all) {
+            if (!item.eventId) continue;
+            const current = map.get(item.eventId) || { count: 0, folders: [] };
+            current.count++;
+            if (!current.coverUrl && (item.thumbnailUrl || item.url)) {
+              current.coverUrl = item.thumbnailUrl || item.url;
+            }
+            if (item.folderName && !current.folders.includes(item.folderName)) {
+              current.folders.push(item.folderName);
+            }
+            map.set(item.eventId, current);
+          }
+          resolve(map);
+        };
+        request.onerror = () => resolve(new Map());
+      });
+    } catch {
+      return new Map();
+    }
+  },
+
   async deleteEventPhotos(eventId: string, photoId?: string): Promise<void> {
     try {
       const db = await getDB();
