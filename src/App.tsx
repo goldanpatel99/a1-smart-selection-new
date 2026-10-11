@@ -13,6 +13,7 @@ import { CreateEventModal } from './components/CreateEventModal';
 import { StudioSettingsModal } from './components/StudioSettingsModal';
 import { ToastContainer } from './components/Toast';
 import { WhatsAppSupportButton } from './components/WhatsAppSupportButton';
+import { PointTier } from './types';
 
 function AppContent() {
   const { currentView, currentUser } = useApp();
@@ -22,7 +23,10 @@ function AppContent() {
     isOpen: false,
     mode: 'login',
   });
-  const [buyPointsOpen, setBuyPointsOpen] = useState(false);
+  const [buyPointsModal, setBuyPointsModal] = useState<{ isOpen: boolean; tier?: PointTier }>({
+    isOpen: false,
+    tier: 'standard',
+  });
   const [createEventOpen, setCreateEventOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -42,7 +46,7 @@ function AppContent() {
       {currentView !== 'client-gallery' && (
         <Navbar
           onOpenAuth={(mode) => setAuthModal({ isOpen: true, mode })}
-          onOpenBuyPoints={() => setBuyPointsOpen(true)}
+          onOpenBuyPoints={() => setBuyPointsModal({ isOpen: true, tier: 'standard' })}
           onOpenCreateEvent={() => setCreateEventOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
         />
@@ -87,14 +91,14 @@ function AppContent() {
             {currentView === 'landing' && (
               <LandingPage
                 onOpenAuth={(mode) => setAuthModal({ isOpen: true, mode })}
-                onOpenBuyPoints={() => setBuyPointsOpen(true)}
+                onOpenBuyPoints={() => setBuyPointsModal({ isOpen: true, tier: 'standard' })}
                 onOpenCreateEvent={() => setCreateEventOpen(true)}
               />
             )}
 
             {currentView === 'dashboard' && (
               <Dashboard
-                onOpenBuyPoints={() => setBuyPointsOpen(true)}
+                onOpenBuyPoints={() => setBuyPointsModal({ isOpen: true, tier: 'standard' })}
                 onOpenCreateEvent={() => setCreateEventOpen(true)}
                 onOpenSettings={() => setSettingsOpen(true)}
               />
@@ -119,14 +123,15 @@ function AppContent() {
       />
 
       <BuyPointsModal
-        isOpen={buyPointsOpen}
-        onClose={() => setBuyPointsOpen(false)}
+        isOpen={buyPointsModal.isOpen}
+        onClose={() => setBuyPointsModal((p) => ({ ...p, isOpen: false }))}
+        initialTier={buyPointsModal.tier || 'standard'}
       />
 
       <CreateEventModal
         isOpen={createEventOpen}
         onClose={() => setCreateEventOpen(false)}
-        onOpenBuyPoints={() => setBuyPointsOpen(true)}
+        onOpenBuyPoints={(tier) => setBuyPointsModal({ isOpen: true, tier: tier || 'standard' })}
       />
 
       <StudioSettingsModal

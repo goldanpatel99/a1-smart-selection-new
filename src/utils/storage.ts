@@ -33,7 +33,18 @@ export const storage = {
         localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(INITIAL_USERS));
         return INITIAL_USERS;
       }
-      return JSON.parse(data);
+      const parsed: User[] = JSON.parse(data);
+      // Normalize points fields for Standard and Premium points support
+      return parsed.map((u) => {
+        const std = u.standardPoints !== undefined ? u.standardPoints : (u.points || 0);
+        const prm = u.premiumPoints !== undefined ? u.premiumPoints : 0;
+        return {
+          ...u,
+          standardPoints: std,
+          premiumPoints: prm,
+          points: std + prm,
+        };
+      });
     } catch {
       return INITIAL_USERS;
     }
@@ -132,7 +143,25 @@ export const storage = {
         localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_ADMIN_SETTINGS));
         return INITIAL_ADMIN_SETTINGS;
       }
-      return JSON.parse(data);
+      const parsed: AdminSettings = JSON.parse(data);
+      // Auto-migrate if older version with only 3 generic packages or old pricing (199 / 3000)
+      const hasUpdatedPackages =
+        Array.isArray(parsed.pricingPackages) &&
+        parsed.pricingPackages.length >= 6 &&
+        parsed.pricingPackages.some((p) => p.id === 'pkg-prm-1' && p.priceRupees === 249) &&
+        parsed.pricingPackages.some((p) => p.id === 'pkg-prm-5' && p.priceRupees === 1199) &&
+        parsed.pricingPackages.some((p) => p.id === 'pkg-std-1' && p.photosLimit === 2500);
+
+      if (!hasUpdatedPackages) {
+        const upgraded: AdminSettings = {
+          ...parsed,
+          pricingPackages: INITIAL_ADMIN_SETTINGS.pricingPackages,
+        };
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(upgraded));
+        return upgraded;
+      }
+
+      return parsed;
     } catch {
       return INITIAL_ADMIN_SETTINGS;
     }

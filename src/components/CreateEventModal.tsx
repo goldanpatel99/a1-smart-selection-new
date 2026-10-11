@@ -2,21 +2,21 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   X,
-  Calendar,
   User,
   Phone,
-  Mail,
   Camera,
   Coins,
   AlertTriangle,
   ArrowRight,
   Sliders,
+  Zap,
 } from 'lucide-react';
+import { PointTier } from '../types';
 
 interface CreateEventModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onOpenBuyPoints: () => void;
+  onOpenBuyPoints: (initialTier?: PointTier) => void;
 }
 
 export const CreateEventModal: React.FC<CreateEventModalProps> = ({
@@ -24,7 +24,19 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   onClose,
   onOpenBuyPoints,
 }) => {
-  const { currentUser, createEvent, navigateTo, adminSettings } = useApp();
+  const { currentUser, createEvent, navigateTo } = useApp();
+
+  const stdBalance =
+    currentUser?.standardPoints !== undefined
+      ? currentUser.standardPoints
+      : currentUser?.points || 0;
+  const prmBalance =
+    currentUser?.premiumPoints !== undefined ? currentUser.premiumPoints : 0;
+
+  // Auto-select tier: default to premium if photographer has premium points, else standard
+  const [selectedTier, setSelectedTier] = useState<PointTier>(() =>
+    prmBalance > 0 && stdBalance === 0 ? 'premium' : 'standard'
+  );
 
   const [title, setTitle] = useState('');
   const [coupleName, setCoupleName] = useState('');
@@ -38,31 +50,32 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [deadlineDays, setDeadlineDays] = useState(6);
   const [maxSelectionLimit, setMaxSelectionLimit] = useState<number | undefined>(80);
   const [limitEnabled, setLimitEnabled] = useState(false);
-  const [coupleStory, setCoupleStory] = useState('');
   const [photosPerSheet, setPhotosPerSheet] = useState<number>(
     currentUser?.defaultPhotosPerSheet || 6
   );
 
   if (!isOpen) return null;
 
-  const currentPoints = currentUser?.points || 0;
-  const cost = adminSettings.pointsPerEvent;
-  const hasEnoughPoints = currentPoints >= cost;
+  const hasStandardPoints = stdBalance >= 1;
+  const hasPremiumPoints = prmBalance >= 1;
+  const hasEnoughForSelectedTier =
+    selectedTier === 'premium' ? hasPremiumPoints : hasStandardPoints;
+  const hasAnyPoints = stdBalance > 0 || prmBalance > 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !coupleName || !clientPhone) return;
+    if (!title.trim() || !coupleName.trim()) return;
 
     const res = createEvent({
-      title,
-      coupleName,
-      clientPhone,
-      clientEmail: clientEmail || undefined,
+      title: title.trim(),
+      coupleName: coupleName.trim(),
+      clientPhone: clientPhone.trim() || undefined,
+      clientEmail: clientEmail.trim() || undefined,
       eventDate,
       deadlineDays: Number(deadlineDays),
       maxSelectionLimit: limitEnabled ? Number(maxSelectionLimit) : undefined,
       photosPerSheet: Number(photosPerSheet) || 6,
-      coupleStory: coupleStory.trim() || undefined,
+      pointTier: selectedTier,
     });
 
     if (res.success && res.eventId) {
@@ -70,7 +83,6 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       setCoupleName('');
       setClientPhone('');
       setClientEmail('');
-      setCoupleStory('');
       setLimitEnabled(false);
       onClose();
       // Jump straight to upload photos page
@@ -88,78 +100,155 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           <X className="w-5 h-5" />
         </button>
 
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-2">
+        {/* Header - Cleaned without extra tagline */}
+        <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
             <Camera className="w-5 h-5" />
           </div>
           <div>
             <h2 className="text-2xl font-bold font-heading text-white">Create New Event</h2>
-            <p className="text-xs text-neutral-400">
-              Naya wedding event banayein aur photo folders upload karein.
-            </p>
           </div>
         </div>
 
-        {/* Cost & Balance Banner */}
+        {/* 1. Point Tier Selection Cards (Standard 2,500 vs Premium 5,000) */}
+        <div className="my-4">
+          <label className="block text-xs font-semibold text-neutral-300 mb-2">
+            Select Event Tier / Point to Use:
+          </label>
+          <div className="grid grid-cols-2 gap-2.5">
+            {/* Standard Tier */}
+            <div
+              onClick={() => setSelectedTier('standard')}
+              className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                selectedTier === 'standard'
+                  ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 shadow-lg'
+                  : 'bg-neutral-950/60 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                  <Coins className="w-4 h-4 text-amber-400" />
+                  <span>Standard Event</span>
+                </div>
+                <span
+                  className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                    stdBalance > 0
+                      ? 'bg-amber-500/20 text-amber-300'
+                      : 'bg-rose-500/20 text-rose-300'
+                  }`}
+                >
+                  {stdBalance} Pts
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-400">
+                1 Standard Pt • <strong className="text-neutral-200">Max 2,500 Photos</strong>
+              </p>
+            </div>
+
+            {/* Premium Tier (Energetic Electric Current Animation) */}
+            <div
+              onClick={() => setSelectedTier('premium')}
+              className={`p-3.5 rounded-2xl border cursor-pointer transition-all relative overflow-hidden group ${
+                selectedTier === 'premium'
+                  ? 'bg-gradient-to-br from-purple-950/80 via-neutral-900 to-amber-950/60 border-amber-400 ring-2 ring-amber-400/40 shadow-xl shadow-amber-500/20'
+                  : 'bg-neutral-950/60 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              {/* Electric Current Moving Light Shimmer */}
+              {selectedTier === 'premium' && (
+                <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl">
+                  <div className="absolute -inset-[100%] bg-[conic-gradient(from_0deg,transparent_0_340deg,rgba(251,191,36,0.6)_360deg)] animate-[spin_3s_linear_infinite] opacity-70" />
+                  <div className="absolute inset-[1px] bg-neutral-950/90 rounded-2xl" />
+                </div>
+              )}
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-300">
+                    <span className="relative flex h-3.5 w-3.5 items-center justify-center">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400 relative drop-shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
+                    </span>
+                    <span>⚡ Premium Event</span>
+                  </div>
+                  <span
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                      prmBalance > 0
+                        ? 'bg-amber-500/30 text-amber-200 border border-amber-400/40'
+                        : 'bg-rose-500/20 text-rose-300'
+                    }`}
+                  >
+                    {prmBalance} Pts
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-200/90 font-medium">
+                  1 Premium Pt • <strong className="text-white">Max 5,000 Photos</strong>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Cost Banner - Cleaned without repeating balance */}
         <div
-          className={`my-4 p-4 rounded-2xl border flex items-center justify-between ${
-            hasEnoughPoints
+          className={`mb-4 p-3.5 rounded-2xl border flex items-center justify-between ${
+            hasEnoughForSelectedTier
               ? 'bg-neutral-950/80 border-neutral-800 text-neutral-300'
               : 'bg-rose-950/60 border-rose-500/50 text-rose-200'
           }`}
         >
           <div className="flex items-center gap-3">
             <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                hasEnoughPoints ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/20 text-rose-400'
+              className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                hasEnoughForSelectedTier
+                  ? selectedTier === 'premium'
+                    ? 'bg-amber-500/20 text-amber-300'
+                    : 'bg-amber-500/10 text-amber-400'
+                  : 'bg-rose-500/20 text-rose-400'
               }`}
             >
-              {hasEnoughPoints ? (
-                <Coins className="w-5 h-5" />
+              {hasEnoughForSelectedTier ? (
+                selectedTier === 'premium' ? <Zap className="w-4 h-4 fill-amber-400" /> : <Coins className="w-4 h-4" />
               ) : (
-                <AlertTriangle className="w-5 h-5" />
+                <AlertTriangle className="w-4 h-4" />
               )}
             </div>
             <div>
               <div className="text-xs font-semibold">
-                Event Creation Cost:{' '}
-                <span className="font-mono text-amber-400">1 Point</span>
-              </div>
-              <div className="text-[11px] opacity-80">
-                Your Studio Balance:{' '}
-                <span className="font-mono font-bold">{currentPoints} Points</span>
+                Cost:{' '}
+                <span className="font-mono font-bold text-white">
+                  1 {selectedTier === 'premium' ? 'Premium Point (5,000 photos)' : 'Standard Point (2,500 photos)'}
+                </span>
               </div>
             </div>
           </div>
 
-          {!hasEnoughPoints && (
+          {!hasEnoughForSelectedTier && (
             <button
               type="button"
               onClick={() => {
                 onClose();
-                onOpenBuyPoints();
+                onOpenBuyPoints(selectedTier);
               }}
-              className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow hover:scale-105 transition-all flex items-center gap-1"
+              className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow hover:scale-105 transition-all flex items-center gap-1"
             >
-              Buy Points <ArrowRight className="w-3.5 h-3.5" />
+              Recharge <ArrowRight className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
 
-        {!hasEnoughPoints ? (
+        {!hasAnyPoints && !hasEnoughForSelectedTier ? (
           <div className="p-5 bg-neutral-950/60 rounded-2xl border border-neutral-800/80 text-center my-4">
             <h4 className="text-sm font-bold text-neutral-200 mb-1">
               Points Balance Is 0
             </h4>
             <p className="text-xs text-neutral-400 mb-4 max-w-sm mx-auto">
-              Naya wedding event banane ke liye recharge karein.
+              Naya wedding event banane ke liye recharge karein. Standard (2,500 photos) ya Premium (5,000 photos) points select karein.
             </p>
             <button
               type="button"
               onClick={() => {
                 onClose();
-                onOpenBuyPoints();
+                onOpenBuyPoints(selectedTier);
               }}
               className="py-3 px-6 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 font-bold text-sm rounded-xl shadow-lg shadow-amber-500/20 hover:scale-105 transition-transform inline-flex items-center gap-2"
             >
@@ -176,7 +265,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               <input
                 type="text"
                 required
-                placeholder="e.g. Sharma Wedding 2026 ya Kapoor Sangeet & Reception"
+                placeholder="Wedding or Event Title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 transition-colors"
@@ -193,7 +282,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Aarav & Priya"
+                    placeholder="Client Names"
                     value={coupleName}
                     onChange={(e) => setCoupleName(e.target.value)}
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-xl pl-9 pr-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
@@ -203,14 +292,13 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-neutral-300 mb-1">
-                  Client WhatsApp Number *
+                  Client WhatsApp Number (Optional)
                 </label>
                 <div className="relative">
                   <Phone className="absolute left-3 top-3 w-4 h-4 text-neutral-500" />
                   <input
                     type="tel"
-                    required
-                    placeholder="+91 98765 43210"
+                    placeholder="Phone Number (Optional)"
                     value={clientPhone}
                     onChange={(e) => setClientPhone(e.target.value)}
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-xl pl-9 pr-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
@@ -219,17 +307,15 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               </div>
             </div>
 
+            {/* Selection Time Limit */}
             <div>
               <label className="block text-xs font-semibold text-neutral-300 mb-1">
-                Selection Deadline
+                Selection Time Limit
               </label>
               <div className="w-full bg-neutral-950 border border-amber-500/40 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-amber-400"></span>
                   <span className="text-sm font-bold text-amber-300 font-mono">6 Days</span>
-                  <span className="text-[10px] uppercase font-bold text-neutral-400 bg-neutral-900 border border-neutral-800 px-2 py-0.5 rounded">
-                    Strictly Automatic
-                  </span>
                 </div>
               </div>
               <p className="text-[10px] text-neutral-500 mt-1">
@@ -237,12 +323,12 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               </p>
             </div>
 
-            {/* Selection Limit (Album quota) */}
+            {/* Selection Limit */}
             <div className="p-3.5 bg-neutral-950/70 border border-neutral-800/80 rounded-2xl">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold text-neutral-200 flex items-center gap-1.5">
                   <Sliders className="w-3.5 h-3.5 text-amber-400" />
-                  Photo Selection Limit (Album Quota)
+                  <span>Photo Selection Limit</span>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -276,35 +362,12 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               )}
             </div>
 
-            {/* Romantic Couple Story / Welcome Note (Optional) */}
-            <div>
-              <label className="block text-xs font-semibold text-neutral-300 mb-1">
-                Couple Story / Welcome Message (Optional)
-              </label>
-              <textarea
-                rows={2}
-                value={coupleStory}
-                onChange={(e) => setCoupleStory(e.target.value)}
-                placeholder='e.g. "Two souls with but a single thought, two hearts that beat as one. Welcome to our sacred wedding memories!"'
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 resize-none"
-              />
-              <p className="text-[10px] text-neutral-500 mt-0.5">
-                Client gallery open karte waqt background music ke sath romantic welcome screen par show hoga.
-              </p>
-            </div>
-
             {/* Album Sheet Estimator Formula Setting */}
             <div className="p-3.5 bg-neutral-950/70 border border-neutral-800/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <div className="text-xs font-semibold text-neutral-200 flex items-center gap-1.5">
                   <span>📖 Album Sheet Estimator</span>
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono">
-                    Default: 6 Photos = 1 Sheet
-                  </span>
                 </div>
-                <p className="text-[11px] text-neutral-400 mt-0.5">
-                  Client gallery mein live dikhega: kitne photos par lagbhag kitni sheets (pages) banengi.
-                </p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <input
@@ -319,12 +382,12 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               </div>
             </div>
 
+            {/* Bottom Button - Strictly: Create Event & Upload Photos */}
             <button
               type="submit"
-              className="w-full mt-3 py-3.5 px-4 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 hover:from-amber-400 hover:to-amber-200 text-neutral-950 font-bold text-sm rounded-xl shadow-lg shadow-amber-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2"
+              className="w-full mt-3 py-3.5 px-4 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 hover:from-amber-400 hover:to-amber-200 text-neutral-950 font-extrabold text-sm rounded-xl shadow-lg shadow-amber-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2"
             >
-              <span>Create Event & Upload Photos ({cost} {cost === 1 ? 'Point' : 'Points'})</span>
-              <ArrowRight className="w-4 h-4" />
+              <span>Create Event & Upload Photos</span>
             </button>
           </form>
         )}

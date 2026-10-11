@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   User,
   WeddingEvent,
@@ -6,10 +6,12 @@ import {
   AdminSettings,
   Photo,
   PhotoFolder,
+  PointTier,
 } from '../types';
 import { storage } from '../utils/storage';
 import { idbStorage } from '../utils/idbStorage';
 import { firebaseService } from '../services/firebaseService';
+import { SAMPLE_DEMO_EVENT } from '../utils/mockData';
 
 export type AppView =
   | 'landing'
@@ -60,7 +62,7 @@ interface AppContextType {
     paymentMethod?: string,
     paymentDetails?: { paymentId?: string; orderId?: string }
   ) => Promise<boolean>;
-  adminAddPoints: (userId: string, points: number, reason: string) => void;
+  adminAddPoints: (userId: string, points: number, reason: string, tier?: PointTier) => void;
   adminResetPassword: (userId: string, customPass?: string) => string;
   adminUpdateSettings: (newSettings: AdminSettings) => void;
   adminUpdateOwnCredentials: (newEmail: string, newPassword: string) => boolean;
@@ -72,13 +74,14 @@ interface AppContextType {
   createEvent: (data: {
     title: string;
     coupleName: string;
-    clientPhone: string;
+    clientPhone?: string;
     clientEmail?: string;
     eventDate: string;
     deadlineDays: number;
     maxSelectionLimit?: number;
     photosPerSheet?: number;
     coupleStory?: string;
+    pointTier?: PointTier;
   }) => { success: boolean; error?: string; eventId?: string };
   extendDeadline: (eventId: string, days?: number) => { success: boolean; error?: string };
   updateEvent: (eventId: string, data: Partial<WeddingEvent>) => void;
@@ -106,6 +109,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [users, setUsers] = useState<User[]>(() => storage.getUsers());
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => storage.getCurrentUserId());
   const [events, setEvents] = useState<WeddingEvent[]>(() => storage.getEvents());
+  const [demoEvent, setDemoEvent] = useState<WeddingEvent>(SAMPLE_DEMO_EVENT);
   const [transactions, setTransactions] = useState<PointTransaction[]>(() => storage.getTransactions());
   const [adminSettings, setAdminSettings] = useState<AdminSettings>(() => storage.getSettings());
   const [currentView, setCurrentView] = useState<AppView>('landing');
@@ -270,13 +274,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [activeEventId]);
 
+  const isNavigatingProgrammaticallyRef = useRef(false);
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
+  const usersRef = useRef(users);
+  usersRef.current = users;
+
   // Handle URL hash routing on initial load & popstate/hashchange across devices
   useEffect(() => {
     const handleRouteFromHash = () => {
+      if (isNavigatingProgrammaticallyRef.current) return;
+
       const hash = window.location.hash.replace('#', '');
       if (hash.startsWith('gallery/')) {
         const slugOrId = hash.replace('gallery/', '');
-        const evt = events.find((e) => e.slug === slugOrId || e.id === slugOrId);
+        if (
+          slugOrId === 'sample-client-gallery' ||
+          slugOrId === 'sample-wedding' ||
+          slugOrId === 'demo' ||
+          slugOrId === 'demo-sample-event'
+        ) {
+          setActiveEventId('demo-sample-event');
+          setCurrentView('client-gallery');
+          return;
+        }
+        const currentEvents = eventsRef.current;
+        const evt = currentEvents.find((e) => e.slug === slugOrId || e.id === slugOrId);
         if (evt) {
           setActiveEventId(evt.id);
           setCurrentView('client-gallery');
@@ -295,7 +318,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       } else if (hash === 'admin') {
         const storedUid = storage.getCurrentUserId();
-        const authedUser = users.find((u) => u.id === storedUid);
+        const authedUser = usersRef.current.find((u) => u.id === storedUid);
         if (authedUser && authedUser.role === 'admin') {
           setCurrentView('admin-panel');
         } else {
@@ -310,13 +333,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setCurrentView('landing');
           window.location.hash = '';
         }
+      } else if (hash.startsWith('upload/')) {
+        const eid = hash.replace('upload/', '');
+        if (eid) setActiveEventId(eid);
+        setCurrentView('photo-upload');
+      } else if (hash.startsWith('results/')) {
+        const eid = hash.replace('results/', '');
+        if (eid) setActiveEventId(eid);
+        setCurrentView('selection-results');
       }
     };
 
     handleRouteFromHash();
     window.addEventListener('hashchange', handleRouteFromHash);
     return () => window.removeEventListener('hashchange', handleRouteFromHash);
-  }, [events]);
+  }, []);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -331,22 +362,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const navigateTo = (view: AppView, eventId: string | null = null) => {
+    isNavigatingProgrammaticallyRef.current = true;
     setCurrentView(view);
     if (eventId !== undefined) {
       setActiveEventId(eventId);
     }
     // Update url hash for easy sharing and back button
     if (view === 'client-gallery' && eventId) {
-      const evt = events.find((e) => e.id === eventId);
-      window.location.hash = `gallery/${evt ? evt.slug : eventId}`;
+      if (eventId === 'demo-sample-event' || eventId === 'demo') {
+        window.location.hash = 'gallery/sample-client-gallery';
+      } else {
+        const evt = eventsRef.current.find((e) => e.id === eventId);
+        window.location.hash = `gallery/${evt ? evt.slug : eventId}`;
+      }
     } else if (view === 'admin-panel') {
       window.location.hash = 'admin';
     } else if (view === 'dashboard') {
       window.location.hash = 'dashboard';
+    } else if (view === 'photo-upload') {
+      window.location.hash = eventId ? `upload/${eventId}` : 'upload';
+    } else if (view === 'selection-results') {
+      window.location.hash = eventId ? `results/${eventId}` : 'results';
     } else if (view === 'landing') {
       window.location.hash = '';
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => {
+      isNavigatingProgrammaticallyRef.current = false;
+    }, 300);
   };
 
   const login = (
@@ -485,7 +528,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    const newPoints = currentUser.points + pkg.points;
+    const isPremium = pkg.tier === 'premium';
+    const currentStd = currentUser.standardPoints !== undefined ? currentUser.standardPoints : (currentUser.points || 0);
+    const currentPrm = currentUser.premiumPoints !== undefined ? currentUser.premiumPoints : 0;
+
+    const newStd = isPremium ? currentStd : currentStd + pkg.points;
+    const newPrm = isPremium ? currentPrm + pkg.points : currentPrm;
+    const totalNewPoints = newStd + newPrm;
+
     const refText = paymentDetails?.paymentId ? ` • Ref: ${paymentDetails.paymentId}` : '';
     const newTx: PointTransaction = {
       id: `tx-${Date.now()}`,
@@ -494,42 +544,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type: 'credit',
       amount: pkg.points,
       amountRupees: pkg.priceRupees,
-      description: `Points Recharge: ${pkg.name} (${pkg.points} points)${refText}`,
-      balanceAfter: newPoints,
+      pointTier: pkg.tier,
+      description: `Points Recharge: ${pkg.name} (${pkg.points} ${isPremium ? 'Premium' : 'Standard'} ${pkg.points === 1 ? 'Point' : 'Points'})${refText}`,
+      balanceAfter: totalNewPoints,
       createdAt: new Date().toISOString(),
       paymentMethod,
     };
 
+    const updatedUser: User = {
+      ...currentUser,
+      standardPoints: newStd,
+      premiumPoints: newPrm,
+      points: totalNewPoints,
+    };
+
     setUsers((prev) =>
-      prev.map((u) => (u.id === currentUser.id ? { ...u, points: newPoints } : u))
+      prev.map((u) => (u.id === currentUser.id ? updatedUser : u))
     );
     setTransactions((prev) => [newTx, ...prev]);
-    showToast(`Payment of ₹${pkg.priceRupees} verified! ${pkg.points} points credited instantly to your studio balance.`, 'success');
+    firebaseService.saveUser(updatedUser);
+    firebaseService.saveTransaction(newTx);
+
+    showToast(
+      `Payment of ₹${pkg.priceRupees} verified! ${pkg.points} ${isPremium ? 'Premium Points (5,000 photos access/pt)' : 'Standard Points (2,500 photos access/pt)'} live credit ho gaye!`,
+      'success'
+    );
     return true;
   };
 
-  const adminAddPoints = (userId: string, points: number, reason: string) => {
+  const adminAddPoints = (userId: string, points: number, reason: string, tier: PointTier = 'standard') => {
     const targetUser = users.find((u) => u.id === userId);
     if (!targetUser) return;
 
-    const newBalance = Math.max(0, targetUser.points + points);
+    const isPremium = tier === 'premium';
+    const currentStd = targetUser.standardPoints !== undefined ? targetUser.standardPoints : (targetUser.points || 0);
+    const currentPrm = targetUser.premiumPoints !== undefined ? targetUser.premiumPoints : 0;
+
+    const newStd = isPremium ? currentStd : Math.max(0, currentStd + points);
+    const newPrm = isPremium ? Math.max(0, currentPrm + points) : currentPrm;
+    const newTotal = newStd + newPrm;
+
     const newTx: PointTransaction = {
       id: `tx-${Date.now()}`,
       userId: targetUser.id,
       userEmail: targetUser.email,
       type: points >= 0 ? 'credit' : 'debit',
       amount: Math.abs(points),
-      description: `Admin Adjustment: ${reason}`,
-      balanceAfter: newBalance,
+      pointTier: tier,
+      description: `Admin Adjustment (${isPremium ? 'Premium' : 'Standard'}): ${reason}`,
+      balanceAfter: newTotal,
       createdAt: new Date().toISOString(),
       paymentMethod: 'Admin Grant',
     };
 
+    const updatedUser: User = {
+      ...targetUser,
+      standardPoints: newStd,
+      premiumPoints: newPrm,
+      points: newTotal,
+    };
+
     setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, points: newBalance } : u))
+      prev.map((u) => (u.id === userId ? updatedUser : u))
     );
     setTransactions((prev) => [newTx, ...prev]);
-    showToast(`${points >= 0 ? 'Added' : 'Deducted'} ${Math.abs(points)} points for ${targetUser.name}`, 'success');
+    firebaseService.saveUser(updatedUser);
+    firebaseService.saveTransaction(newTx);
+
+    showToast(
+      `${points >= 0 ? 'Added' : 'Deducted'} ${Math.abs(points)} ${isPremium ? 'Premium' : 'Standard'} points for ${targetUser.name}`,
+      'success'
+    );
   };
 
   const adminResetPassword = (userId: string, customPass?: string): string => {
@@ -658,7 +743,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         password: 'admin',
         studioName: 'A1 Smart Selection Admin HQ',
         role: 'admin',
-        points: 999,
+        points: 1998,
+        standardPoints: 999,
+        premiumPoints: 999,
         createdAt: new Date().toISOString(),
         watermarkText: 'A1 SMART SELECTION',
         watermarkPosition: 'bottom-right',
@@ -693,29 +780,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     maxSelectionLimit?: number;
     photosPerSheet?: number;
     coupleStory?: string;
+    pointTier?: PointTier;
   }) => {
     if (!currentUser) {
       return { success: false, error: 'Please login first' };
     }
 
-    // Points Check
-    const requiredPoints = adminSettings.pointsPerEvent;
-    if (currentUser.points < requiredPoints) {
-      return {
-        success: false,
-        error: `Insufficient points! You need ${requiredPoints} point to create an event. Current balance: ${currentUser.points} points. Please buy points first.`,
-      };
+    const tier: PointTier = data.pointTier || 'standard';
+    const isPremium = tier === 'premium';
+    const currentStd = currentUser.standardPoints !== undefined ? currentUser.standardPoints : (currentUser.points || 0);
+    const currentPrm = currentUser.premiumPoints !== undefined ? currentUser.premiumPoints : 0;
+
+    // Check respective point balance
+    if (isPremium) {
+      if (currentPrm < 1) {
+        return {
+          success: false,
+          error: `Insufficient Premium Points! Aapke paas ${currentPrm} Premium Points hain. 5,000 photos access ke liye kripya Premium Points recharge karein.`,
+        };
+      }
+    } else {
+      if (currentStd < 1) {
+        return {
+          success: false,
+          error: `Insufficient Standard Points! Aapke paas ${currentStd} Standard Points hain. 2,500 photos access ke liye kripya Standard Points recharge karein.`,
+        };
+      }
     }
 
-    // Deduct 1 point
-    const newBalance = currentUser.points - requiredPoints;
+    // Deduct 1 point from chosen tier
+    const newStd = isPremium ? currentStd : currentStd - 1;
+    const newPrm = isPremium ? currentPrm - 1 : currentPrm;
+    const newBalance = newStd + newPrm;
+
     const newTx: PointTransaction = {
       id: `tx-${Date.now()}`,
       userId: currentUser.id,
       userEmail: currentUser.email,
       type: 'debit',
-      amount: requiredPoints,
-      description: `Event Created: "${data.title}"`,
+      amount: 1,
+      pointTier: tier,
+      description: `Event Created: "${data.title}" (${isPremium ? '⚡ Premium Point - Up to 5k Photos' : 'Standard Point - Up to 2.5k Photos'})`,
       balanceAfter: newBalance,
       createdAt: new Date().toISOString(),
     };
@@ -729,7 +834,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .replace(/^-+|-+$/g, '') + `-${Math.floor(100 + Math.random() * 900)}`;
 
     const newEventId = `evt-${Date.now()}`;
-    // Completely clean: No pre-uploaded sample folders. Folders are created when photographer uploads them.
     const defaultFolders: PhotoFolder[] = [];
 
     const newEvent: WeddingEvent = {
@@ -750,15 +854,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       folders: defaultFolders,
       photos: [],
       createdAt: new Date().toISOString(),
+      pointTier: tier,
+      maxPhotoCapacity: isPremium ? 5000 : 2500,
+    };
+
+    const updatedUser: User = {
+      ...currentUser,
+      standardPoints: newStd,
+      premiumPoints: newPrm,
+      points: newBalance,
     };
 
     setUsers((prev) =>
-      prev.map((u) => (u.id === currentUser.id ? { ...u, points: newBalance } : u))
+      prev.map((u) => (u.id === currentUser.id ? updatedUser : u))
     );
     setTransactions((prev) => [newTx, ...prev]);
     setEvents((prev) => [newEvent, ...prev]);
 
-    showToast(`Event created! 1 point deducted. New balance: ${newBalance} points.`, 'success');
+    firebaseService.saveUser(updatedUser);
+    firebaseService.saveTransaction(newTx);
+    firebaseService.saveEvent(newEvent);
+
+    showToast(
+      `Event created! 1 ${isPremium ? 'Premium Point (5,000 photos access)' : 'Standard Point (2,500 photos access)'} deduct hua.`,
+      'success'
+    );
     return { success: true, eventId: newEventId };
   };
 
@@ -976,6 +1096,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const togglePhotoSelection = (eventId: string, photoId: string) => {
+    if (eventId === 'demo-sample-event' || eventId === 'demo') {
+      setDemoEvent((prev) => {
+        const currentPhotos = prev.photos || [];
+        const updatedPhotos = currentPhotos.map((p) =>
+          p.id === photoId ? { ...p, isSelected: !p.isSelected } : p
+        );
+        const selCount = updatedPhotos.filter((p) => p.isSelected).length;
+        return {
+          ...prev,
+          photos: updatedPhotos,
+          selectedCount: selCount,
+          selectedPhotoIds: updatedPhotos.filter((p) => p.isSelected).map((p) => p.id),
+        };
+      });
+      return;
+    }
+
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
@@ -1025,6 +1162,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const submitClientSelection = (eventId: string, clientNotes = '') => {
+    if (eventId === 'demo-sample-event' || eventId === 'demo') {
+      setDemoEvent((prev) => ({
+        ...prev,
+        status: 'completed',
+        clientNotes,
+      }));
+      showToast('🎉 Demo selection completed! Try downloading the .bat file.', 'success');
+      return;
+    }
+
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
@@ -1083,7 +1230,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(timer);
   }, []);
 
-  const activeEvent = events.find((e) => e.id === activeEventId) || null;
+  const activeEvent =
+    activeEventId === 'demo-sample-event' || activeEventId === 'demo'
+      ? demoEvent
+      : events.find((e) => e.id === activeEventId) || null;
 
   return (
     <AppContext.Provider

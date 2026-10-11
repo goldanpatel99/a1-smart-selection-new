@@ -34,6 +34,7 @@ import {
   ShieldCheck,
   Store,
   HardDrive,
+  Zap,
 } from 'lucide-react';
 import { WeddingEvent } from '../types';
 import { getClientGalleryUrl } from '../utils/domainConfig';
@@ -359,6 +360,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <span>Logout Studio</span>
               </button>
             </div>
+
+            {/* Storage Policy Notice (Moved below about studio panel) */}
+            <div className="mt-4 p-3 rounded-2xl bg-neutral-950/80 border border-neutral-800/90 text-[11px] text-neutral-400 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-neutral-300">
+                <Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                <span>Storage Policy:</span>
+              </div>
+              <p className="text-[10px] text-neutral-400 leading-relaxed">
+                Uploaded preview photos cloud par 50 din tak rehti hain. Client ka final selection record 1 year tak safe save rahega.
+              </p>
+            </div>
           </div>
         </aside>
 
@@ -377,38 +389,54 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </h1>
           </div>
 
-          {/* 1-Year Selection Record & Safe Storage Notice Line */}
-          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-neutral-900/90 border border-neutral-800 text-[11px] text-neutral-400 shadow-sm">
-            <Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-            <span>
-              <strong className="text-neutral-200">Storage Policy:</strong> Uploaded event preview photos cloud par 50 din tak store rehti hain. But Client ka selection 1 year tak safe save rahega.
-            </span>
-          </div>
-
       {/* Clean 3-Card Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        {/* Points Card - ONLY place showing points balance & Add button */}
+        {/* Points Card - Clearly displaying Standard (2.5k) and Premium (5k) point balances */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-neutral-400 text-xs">
-            <span className="font-semibold">Available Points</span>
-            <Coins className="w-4 h-4 text-amber-400" />
+            <span className="font-semibold">Studio Points Balance</span>
+            <div className="flex items-center gap-1">
+              <Coins className="w-3.5 h-3.5 text-amber-400" />
+              <Zap className="w-3.5 h-3.5 text-purple-400" />
+            </div>
           </div>
-          <div className="my-3">
-            <span
-              className={`text-3xl font-mono font-extrabold ${
-                (currentUser?.points || 0) === 0 ? 'text-rose-400' : 'text-amber-400'
-              }`}
-            >
-              {currentUser?.points || 0}
-            </span>
-            <span className="text-xs text-neutral-400 ml-1.5">points</span>
+
+          <div className="my-3 grid grid-cols-2 gap-2">
+            {/* Standard Balance */}
+            <div className="p-2 rounded-xl bg-neutral-950/80 border border-amber-500/20">
+              <div className="text-[10px] text-neutral-400 flex items-center gap-1">
+                <Coins className="w-3 h-3 text-amber-400" />
+                <span>Standard (2.5k)</span>
+              </div>
+              <div className="mt-1 flex items-baseline gap-1">
+                <span className="text-xl font-mono font-extrabold text-amber-400">
+                  {currentUser?.standardPoints !== undefined ? currentUser.standardPoints : (currentUser?.points || 0)}
+                </span>
+                <span className="text-[10px] text-neutral-500">pts</span>
+              </div>
+            </div>
+
+            {/* Premium Balance */}
+            <div className="p-2 rounded-xl bg-gradient-to-br from-purple-950/40 to-neutral-950 border border-purple-500/30">
+              <div className="text-[10px] text-purple-300 flex items-center gap-1">
+                <Zap className="w-3 h-3 text-amber-400 fill-amber-400 animate-pulse" />
+                <span className="font-semibold">⚡ Premium (5k)</span>
+              </div>
+              <div className="mt-1 flex items-baseline gap-1">
+                <span className="text-xl font-mono font-extrabold text-purple-300">
+                  {currentUser?.premiumPoints || 0}
+                </span>
+                <span className="text-[10px] text-neutral-500">pts</span>
+              </div>
+            </div>
           </div>
+
           <button
             onClick={onOpenBuyPoints}
-            className="w-full py-2 px-3 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-neutral-950 font-bold text-xs rounded-xl shadow transition-all flex items-center justify-center gap-1.5"
+            className="w-full py-2 px-3 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-neutral-950 font-bold text-xs rounded-xl shadow transition-all flex items-center justify-center gap-1.5"
           >
             <Plus className="w-3.5 h-3.5 stroke-[3]" />
-            <span>Add Points</span>
+            <span>Recharge Points</span>
           </button>
         </div>
 
@@ -712,13 +740,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           )}
                         </button>
 
-                        {/* Upload / Manage Photos */}
+                        {/* Upload / Manage Photos - 1 Click Instant Open */}
                         <button
-                          onClick={() => navigateTo('photo-upload', event.id)}
-                          className="py-2 px-2 bg-neutral-850 hover:bg-neutral-800 border border-neutral-800 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            navigateTo('photo-upload', event.id);
+                          }}
+                          className="py-2 px-2.5 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 hover:text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all hover:scale-[1.02] shadow-sm cursor-pointer"
+                          title="Upload wedding photos into folders"
                         >
-                          <Upload className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Photos ({totalPhotos})</span>
+                          <Upload className="w-3.5 h-3.5 text-amber-400 stroke-[2.5]" />
+                          <span>Upload ({totalPhotos})</span>
                         </button>
 
                         {/* Results & .BAT Download */}
@@ -925,12 +959,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </select>
               </div>
 
-              {/* Selection Limit (Album quota) */}
+              {/* Selection Limit */}
               <div className="p-3.5 bg-neutral-950/70 border border-neutral-800/80 rounded-2xl">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-semibold text-neutral-200 flex items-center gap-1.5">
                     <Sliders className="w-3.5 h-3.5 text-amber-400" />
-                    Photo Selection Limit (Album Quota)
+                    Photo Selection Limit
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
@@ -969,13 +1003,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <div>
                   <div className="text-xs font-semibold text-neutral-200 flex items-center gap-1.5">
                     <span>📖 Album Sheet Estimator Formula</span>
-                    <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono">
-                      Default: 6 Photos = 1 Sheet
-                    </span>
                   </div>
-                  <p className="text-[11px] text-neutral-400 mt-0.5">
-                    Client gallery mein live dikhega: kitne photos par lagbhag kitni sheets (pages) banengi.
-                  </p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <input
@@ -984,7 +1012,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     max={20}
                     value={editPhotosPerSheet}
                     onChange={(e) => setEditPhotosPerSheet(Number(e.target.value))}
-                    className="w-16 bg-neutral-900 border border-neutral-700 rounded-xl px-2 py-1.5 text-sm font-mono text-center font-bold text-amber-300 focus:outline-none focus:border-amber-500"
+                    className="w-16 bg-neutral-900 border border-neutral-700 rounded-xl px-2.5 py-1.5 text-sm font-mono text-center font-bold text-amber-300 focus:outline-none focus:border-amber-500"
                   />
                   <span className="text-xs text-neutral-300">photos / sheet</span>
                 </div>

@@ -31,8 +31,9 @@ import {
   Loader2,
   Globe,
   ExternalLink,
+  Zap,
 } from 'lucide-react';
-import { User, AdminSettings } from '../types';
+import { User, AdminSettings, PointTier } from '../types';
 import { getBaseAppUrl, CUSTOM_DOMAIN } from '../utils/domainConfig';
 
 export const AdminPanel: React.FC = () => {
@@ -58,6 +59,7 @@ export const AdminPanel: React.FC = () => {
   // Modals / point adjustment states
   const [selectedUserForPoints, setSelectedUserForPoints] = useState<User | null>(null);
   const [pointsAdjustment, setPointsAdjustment] = useState<number>(5);
+  const [pointsTierToAdjust, setPointsTierToAdjust] = useState<PointTier>('standard');
   const [adjustmentReason, setAdjustmentReason] = useState<string>('Free Welcome Grant');
 
   // Block & Delete photographer states
@@ -214,7 +216,7 @@ export const AdminPanel: React.FC = () => {
   const handleApplyPoints = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUserForPoints) return;
-    adminAddPoints(selectedUserForPoints.id, Number(pointsAdjustment), adjustmentReason);
+    adminAddPoints(selectedUserForPoints.id, Number(pointsAdjustment), adjustmentReason, pointsTierToAdjust);
     setSelectedUserForPoints(null);
   };
 
@@ -580,15 +582,21 @@ export const AdminPanel: React.FC = () => {
                           {userEventsCount}
                         </td>
                         <td className="py-4 text-center">
-                          <span
-                            className={`font-mono font-extrabold text-sm px-2.5 py-1 rounded-full ${
-                              user.points === 0
-                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            }`}
-                          >
-                            {user.points} pts
-                          </span>
+                          <div className="inline-flex flex-col items-center gap-1 font-mono text-xs">
+                            <span
+                              className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold"
+                              title="Standard Points (2,500 photos access/point)"
+                            >
+                              {user.standardPoints !== undefined ? user.standardPoints : (user.points || 0)} Std
+                            </span>
+                            <span
+                              className="px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30 font-bold flex items-center gap-0.5"
+                              title="Premium Points (5,000 photos access/point)"
+                            >
+                              <Zap className="w-2.5 h-2.5 text-amber-300" />
+                              {user.premiumPoints || 0} Prem
+                            </span>
+                          </div>
                         </td>
                         <td className="py-4 text-neutral-400 font-mono text-[11px]">
                           {new Date(user.createdAt).toLocaleDateString()}
@@ -731,8 +739,19 @@ export const AdminPanel: React.FC = () => {
                   key={pkg.id}
                   className="p-4 bg-neutral-950 rounded-2xl border border-neutral-800 space-y-3"
                 >
-                  <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">
-                    Package {index + 1}
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                      Package {index + 1}
+                    </div>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        pkg.tier === 'premium'
+                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                          : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                      }`}
+                    >
+                      {pkg.tier === 'premium' ? '⚡ Premium (5k photos)' : 'Standard (2.5k photos)'}
+                    </span>
                   </div>
 
                   <div>
@@ -907,14 +926,58 @@ export const AdminPanel: React.FC = () => {
               {selectedUserForPoints.studioName})
             </p>
 
-            <div className="p-3 bg-neutral-950 rounded-2xl border border-neutral-800 mb-4 flex items-center justify-between">
-              <span className="text-xs text-neutral-400">Current Balance:</span>
-              <span className="text-base font-mono font-bold text-amber-400">
-                {selectedUserForPoints.points} Points
-              </span>
+            <div className="p-3 bg-neutral-950 rounded-2xl border border-neutral-800 mb-4 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-neutral-400">Standard Balance (2.5k photos):</span>
+                <span className="font-mono font-bold text-amber-400">
+                  {selectedUserForPoints.standardPoints !== undefined ? selectedUserForPoints.standardPoints : (selectedUserForPoints.points || 0)} Pts
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-purple-300 flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-amber-400" />
+                  Premium Balance (5k photos):
+                </span>
+                <span className="font-mono font-bold text-purple-300">
+                  {selectedUserForPoints.premiumPoints || 0} Pts
+                </span>
+              </div>
             </div>
 
             <form onSubmit={handleApplyPoints} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
+                  Select Point Type To Adjust
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPointsTierToAdjust('standard')}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      pointsTierToAdjust === 'standard'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                        : 'bg-neutral-950 text-neutral-400 border border-neutral-800 hover:text-white'
+                    }`}
+                  >
+                    <Coins className="w-3.5 h-3.5" />
+                    <span>Standard (2.5k)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPointsTierToAdjust('premium')}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      pointsTierToAdjust === 'premium'
+                        ? 'bg-purple-500/20 text-purple-200 border border-purple-500/50'
+                        : 'bg-neutral-950 text-neutral-400 border border-neutral-800 hover:text-white'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Premium (5k)</span>
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-neutral-300 mb-1">
                   Points To Add / Deduct (Use - for deduct)

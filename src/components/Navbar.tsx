@@ -40,8 +40,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const [showUserDropdown, setShowUserDropdown] = useState(false);
 
-  const sampleEvent = events[0];
-
   return (
     <header className="sticky top-0 z-40 bg-neutral-950/80 backdrop-blur-xl border-b border-neutral-800/80">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">

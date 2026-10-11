@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   ArrowLeft,
@@ -20,39 +20,69 @@ import {
   FolderOpen,
   Info,
   MessageCircle,
+  Zap,
+  Filter,
+  Check,
+  UploadCloud,
+  ChevronDown,
+  Clock,
+  RefreshCw,
 } from 'lucide-react';
 import { compressAndWatermarkImage } from '../utils/imageCompressor';
 
-// Helper to recursively read all files from a dropped FileSystemDirectoryEntry
-async function readFilesFromDirectoryEntry(
-  dirEntry: any,
-  parentPath = ''
-): Promise<{ file: File; folderName: string }[]> {
-  const currentFolderName = parentPath || dirEntry.name;
-  const reader = dirEntry.createReader();
+// Structure for live upload confirmation card
+export interface UploadConfirmationItem {
+  id: string;
+  filename: string;
+  folderName: string;
+  thumbnailUrl: string;
+  url: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
 
-  const readEntries = (): Promise<any[]> => {
-    return new Promise((resolve, reject) => {
+// Helper to exhaustively read all entries from a DirectoryReader (handles 100-item batch limits)
+async function readAllEntriesFromReader(reader: any): Promise<any[]> {
+  const allEntries: any[] = [];
+  while (true) {
+    const batch: any[] = await new Promise((resolve, reject) => {
       reader.readEntries(resolve, reject);
     });
-  };
+    if (!batch || batch.length === 0) break;
+    allEntries.push(...batch);
+  }
+  return allEntries;
+}
 
+// Recursively scan dropped FileSystemDirectoryEntry, preserving separate folder names
+async function scanDirectoryEntry(
+  entry: any,
+  inheritedFolderName = ''
+): Promise<{ file: File; folderName: string }[]> {
+  const currentFolderName = inheritedFolderName || entry.name;
+  const reader = entry.createReader();
+  const entries = await readAllEntriesFromReader(reader);
   const results: { file: File; folderName: string }[] = [];
-  let entries: any[] = await readEntries();
 
-  while (entries.length > 0) {
-    for (const entry of entries) {
-      if (entry.isFile) {
-        const file: File = await new Promise((res, rej) => entry.file(res, rej));
-        if (file.type.startsWith('image/') || /\.(jpe?g|png|webp|arw|cr2|nef)$/i.test(file.name)) {
+  for (const item of entries) {
+    if (item.isFile) {
+      try {
+        const file: File = await new Promise((res, rej) => item.file(res, rej));
+        if (
+          file.type.startsWith('image/') ||
+          /\.(jpe?g|png|webp|arw|cr2|nef|dng|heic)$/i.test(file.name)
+        ) {
           results.push({ file, folderName: currentFolderName });
         }
-      } else if (entry.isDirectory) {
-        const subFiles = await readFilesFromDirectoryEntry(entry, entry.name);
-        results.push(...subFiles);
+      } catch (err) {
+        console.warn('Could not read file entry', err);
       }
+    } else if (item.isDirectory) {
+      // For subdirectories, use the subfolder's own name (e.g. Wedding -> Haldi -> Reception)
+      const subFolderName = item.name;
+      const subResults = await scanDirectoryEntry(item, subFolderName);
+      results.push(...subResults);
     }
-    entries = await readEntries();
   }
 
   return results;
@@ -71,30 +101,35 @@ export const PhotoUploadPage: React.FC = () => {
     showToast,
   } = useApp();
 
-  // Hidden folder-only input with webkitdirectory
+  // Hidden inputs for folders & loose photos
   const folderInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFolderId, setSelectedFolderId] = useState<string>(
-    activeEvent?.folders?.[0]?.id || ''
-  );
+  const filesInputRef = useRef<HTMLInputElement>(null);
+
+  // 'all' represents viewing all folders simultaneously; or a specific folder ID
+  const [selectedFolderId, setSelectedFolderId] = useState<string>('all');
   const [newFolderName, setNewFolderName] = useState('');
   const [showAddFolderInput, setShowAddFolderInput] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStatus, setProcessingStatus] = useState({ current: 0, total: 0, folder: '' });
+  const [processingStatus, setProcessingStatus] = useState({
+    current: 0,
+    total: 0,
+    folder: '',
+    speedFps: 0,
+  });
   const [applyWatermark, setApplyWatermark] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
-  const [looseFileWarning, setLooseFileWarning] = useState<string | null>(null);
 
-  // Maximum 3000 photos capacity warning state
+  // Maximum photo capacity warning modal state
   const [capacityWarning, setCapacityWarning] = useState<{
     current: number;
     attempted: number;
     max: number;
   } | null>(null);
 
-  // Live active uploading thumbnail previews
-  const [liveThumbnails, setLiveThumbnails] = useState<
-    Array<{ name: string; url: string; folder: string; id: string }>
-  >([]);
+  // Live real-time gallery of confirmed uploaded photos
+  const [confirmedUploads, setConfirmedUploads] = useState<UploadConfirmationItem[]>([]);
+  const [showConfirmationGallery, setShowConfirmationGallery] = useState(false);
+  const [confirmationFilterFolder, setConfirmationFilterFolder] = useState<string>('all');
 
   if (!activeEvent) {
     return (
@@ -102,7 +137,7 @@ export const PhotoUploadPage: React.FC = () => {
         <h2 className="text-xl font-bold text-white mb-2">No Event Selected</h2>
         <button
           onClick={() => navigateTo('dashboard')}
-          className="px-4 py-2 bg-neutral-800 text-white rounded-xl text-xs"
+          className="px-4 py-2 bg-neutral-800 text-white rounded-xl text-xs hover:bg-neutral-700 transition"
         >
           Return to Dashboard
         </button>
@@ -110,16 +145,44 @@ export const PhotoUploadPage: React.FC = () => {
     );
   }
 
-  // Safe folders and photos collections
   const eventFolders = activeEvent.folders || [];
   const eventPhotos = activeEvent.photos || [];
 
-  // Active folder for viewing photos
-  const currentFolder =
-    eventFolders.find((f) => f.id === selectedFolderId) || eventFolders[0];
-  const activeFolderPhotos = eventPhotos.filter(
-    (p) => p.folderId === currentFolder?.id
-  );
+  // Capacity limit based on event tier (2500 Standard, 5000 Premium)
+  const MAX_EVENT_CAPACITY =
+    activeEvent.maxPhotoCapacity || (activeEvent.pointTier === 'premium' ? 5000 : 2500);
+
+  // Grouped photos by folder for the "All Folders" separated view
+  const photosByFolder = useMemo(() => {
+    const map = new Map<string, typeof eventPhotos>();
+    eventFolders.forEach((f) => map.set(f.id, []));
+
+    eventPhotos.forEach((photo) => {
+      const list = map.get(photo.folderId);
+      if (list) {
+        list.push(photo);
+      } else {
+        // Unmapped or newly added folder
+        if (!map.has(photo.folderId)) {
+          map.set(photo.folderId, []);
+        }
+        map.get(photo.folderId)!.push(photo);
+      }
+    });
+
+    return map;
+  }, [eventFolders, eventPhotos]);
+
+  // Current folder when a single folder is selected
+  const currentSingleFolder =
+    selectedFolderId !== 'all'
+      ? eventFolders.find((f) => f.id === selectedFolderId)
+      : null;
+
+  const currentFolderPhotos =
+    selectedFolderId === 'all'
+      ? eventPhotos
+      : eventPhotos.filter((p) => p.folderId === selectedFolderId);
 
   const handleCreateFolder = (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,17 +192,14 @@ export const PhotoUploadPage: React.FC = () => {
     setShowAddFolderInput(false);
   };
 
-  // Process and upload a list of { file, folderName }
+  // High-Speed Concurrent Processor
   const processFolderUpload = async (items: { file: File; folderName: string }[]) => {
     if (items.length === 0) {
-      showToast('No valid image files found inside the selected folder', 'error');
+      showToast('No valid photo files detected for upload.', 'error');
       return;
     }
 
-    // STRICT CHECK: One Event Max Photos Capacity = 3000 photos
-    const MAX_EVENT_CAPACITY = 3000;
     const currentEventPhotosCount = eventPhotos.length;
-
     if (currentEventPhotosCount + items.length > MAX_EVENT_CAPACITY) {
       setCapacityWarning({
         current: currentEventPhotosCount,
@@ -150,30 +210,23 @@ export const PhotoUploadPage: React.FC = () => {
     }
 
     setIsProcessing(true);
-    setLooseFileWarning(null);
-    setLiveThumbnails([]);
+    setShowConfirmationGallery(true);
+    const startTime = Date.now();
 
-    const newPhotosData: Array<{
-      filename: string;
-      originalName: string;
-      folderId: string;
-      folderName: string;
-      url: string;
-      thumbnailUrl?: string;
-      sizeBytes: number;
-    }> = [];
+    // High Concurrency (8 parallel workers with hardware-accelerated decode)
+    const CONCURRENCY = 8;
+    let totalProcessedSoFar = 0;
 
-    // Parallel multi-worker chunk processing (5 concurrent workers for ultra-high speed)
-    const CONCURRENCY = 5;
     for (let i = 0; i < items.length; i += CONCURRENCY) {
       const chunk = items.slice(i, i + CONCURRENCY);
+
       const results = await Promise.all(
         chunk.map(async ({ file, folderName }) => {
           try {
             const compressed = await compressAndWatermarkImage(file, {
               maxWidth: 1100,
               maxHeight: 900,
-              quality: 0.65, // Hard compression for highest storage efficiency
+              quality: 0.65, // Optimal hard compression for instant web gallery & low disk usage
               watermarkText: applyWatermark
                 ? currentUser?.watermarkText || currentUser?.studioName?.toUpperCase() || 'PREVIEW'
                 : '',
@@ -185,9 +238,9 @@ export const PhotoUploadPage: React.FC = () => {
               filename: file.name,
               originalName: file.name,
               folderId: '',
-              folderName: folderName,
+              folderName: folderName || 'Photos',
               url: compressed.dataUrl,
-              thumbnailUrl: compressed.dataUrl,
+              thumbnailUrl: compressed.thumbnailUrl || compressed.dataUrl,
               sizeBytes: compressed.sizeBytes,
             };
           } catch (err) {
@@ -197,30 +250,55 @@ export const PhotoUploadPage: React.FC = () => {
         })
       );
 
-      const validPhotos = results.filter(Boolean) as any[];
-      newPhotosData.push(...validPhotos);
+      const validPhotos = results.filter(Boolean) as Array<{
+        filename: string;
+        originalName: string;
+        folderId: string;
+        folderName: string;
+        url: string;
+        thumbnailUrl: string;
+        sizeBytes: number;
+      }>;
 
-      const processedCount = Math.min(items.length, i + chunk.length);
-      const latest = validPhotos[validPhotos.length - 1];
-      if (latest) {
-        setLiveThumbnails((prev) => [
-          { id: `${Date.now()}-${Math.random()}`, name: latest.filename, url: latest.url, folder: latest.folderName },
-          ...prev.slice(0, 5),
-        ]);
+      if (validPhotos.length > 0) {
+        // 1. Immediately append to live confirmation gallery so user sees photos popping in live!
+        const newConfirmationCards: UploadConfirmationItem[] = validPhotos.map((p, idx) => ({
+          id: `up-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+          filename: p.filename,
+          folderName: p.folderName,
+          thumbnailUrl: p.thumbnailUrl,
+          url: p.url,
+          sizeBytes: p.sizeBytes,
+          uploadedAt: new Date().toLocaleTimeString(),
+        }));
+
+        setConfirmedUploads((prev) => [...newConfirmationCards, ...prev]);
+
+        // 2. Incremental batch sync into active event state!
+        // This makes photos and folders appear on the website in real time without waiting for full completion!
+        addPhotosToEvent(activeEvent.id, validPhotos);
       }
 
+      totalProcessedSoFar += chunk.length;
+      const elapsedSec = Math.max(0.2, (Date.now() - startTime) / 1000);
+      const speedFps = Math.round((totalProcessedSoFar / elapsedSec) * 10) / 10;
+
       setProcessingStatus({
-        current: processedCount,
+        current: Math.min(items.length, totalProcessedSoFar),
         total: items.length,
         folder: chunk[0]?.folderName || 'Photos',
+        speedFps,
       });
     }
 
-    addPhotosToEvent(activeEvent.id, newPhotosData);
     setIsProcessing(false);
+    showToast(
+      `🎉 Sabhi ${items.length} photos successfully upload ho chuke hain! Separate folders website pe ban gaye.`,
+      'success'
+    );
   };
 
-  // Handler for <input webkitdirectory />
+  // Handler for directory / multi-folder file input
   const handleFolderInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -229,20 +307,26 @@ export const PhotoUploadPage: React.FC = () => {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (!file.type.startsWith('image/') && !/\.(jpe?g|png|webp|arw|cr2|nef)$/i.test(file.name)) {
+      if (
+        !file.type.startsWith('image/') &&
+        !/\.(jpe?g|png|webp|arw|cr2|nef|dng|heic)$/i.test(file.name)
+      ) {
         continue;
       }
 
-      // webkitRelativePath contains e.g. "Haldi/DSC_001.JPG" or "Event/Reception/DSC_010.JPG"
+      // webkitRelativePath contains e.g. "Wedding/01_Haldi/DSC_001.JPG" or "Haldi/DSC_001.JPG"
       const relativePath = file.webkitRelativePath || '';
-      const pathParts = relativePath.split('/');
+      const pathParts = relativePath.split('/').filter(Boolean);
 
       let detectedFolderName = 'Photos';
-      if (pathParts.length >= 2) {
-        // If there's an immediate parent directory, pick it
-        // E.g. "Haldi/DSC_001.JPG" -> "Haldi"
-        // E.g. "Event/Haldi/DSC_001.JPG" -> "Haldi"
+      if (pathParts.length >= 3) {
+        // Multi-level: E.g. "Root/Haldi/file.jpg" -> pick "Haldi"
         detectedFolderName = pathParts[pathParts.length - 2];
+      } else if (pathParts.length === 2) {
+        // Single folder: E.g. "Haldi/file.jpg" -> pick "Haldi"
+        detectedFolderName = pathParts[0];
+      } else if (currentSingleFolder) {
+        detectedFolderName = currentSingleFolder.name;
       }
 
       items.push({
@@ -252,124 +336,164 @@ export const PhotoUploadPage: React.FC = () => {
     }
 
     if (items.length === 0) {
-      showToast('Selected folder has no image files', 'error');
+      showToast('Selected folder has no valid image files.', 'error');
       return;
     }
 
     processFolderUpload(items);
-    // Reset file input
+
     if (folderInputRef.current) {
       folderInputRef.current.value = '';
     }
   };
 
-  // Handler for Drag & Drop
+  // Handler for loose photos multi-file input
+  const handlePhotosInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const targetFolder = currentSingleFolder?.name || 'Photos';
+    const items: { file: File; folderName: string }[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (
+        file.type.startsWith('image/') ||
+        /\.(jpe?g|png|webp|arw|cr2|nef|dng|heic)$/i.test(file.name)
+      ) {
+        items.push({
+          file,
+          folderName: targetFolder,
+        });
+      }
+    }
+
+    if (items.length === 0) {
+      showToast('No valid photos selected.', 'error');
+      return;
+    }
+
+    processFolderUpload(items);
+
+    if (filesInputRef.current) {
+      filesInputRef.current.value = '';
+    }
+  };
+
+  // Drag & Drop Handler supporting multiple folders and loose files simultaneously
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    setLooseFileWarning(null);
 
-    const items = e.dataTransfer.items;
-    if (!items || items.length === 0) return;
+    const dataTransferItems = e.dataTransfer.items;
+    if (!dataTransferItems || dataTransferItems.length === 0) {
+      // Fallback for standard files drag
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const files = Array.from(e.dataTransfer.files).filter(
+          (f) =>
+            f.type.startsWith('image/') ||
+            /\.(jpe?g|png|webp|arw|cr2|nef|dng|heic)$/i.test(f.name)
+        );
+        const targetFolder = currentSingleFolder?.name || 'Photos';
+        const items = files.map((file) => ({ file, folderName: targetFolder }));
+        processFolderUpload(items);
+      }
+      return;
+    }
 
-    let hasDirectories = false;
-    let looseFileCount = 0;
     const collectedFiles: { file: File; folderName: string }[] = [];
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
+    for (let i = 0; i < dataTransferItems.length; i++) {
+      const item = dataTransferItems[i];
       const entry = (item as any).webkitGetAsEntry ? (item as any).webkitGetAsEntry() : null;
 
       if (entry) {
         if (entry.isDirectory) {
-          hasDirectories = true;
-          const folderFiles = await readFilesFromDirectoryEntry(entry);
+          // Dedicated folder scan: each folder keeps its own folder name!
+          const folderFiles = await scanDirectoryEntry(entry);
           collectedFiles.push(...folderFiles);
         } else if (entry.isFile) {
-          looseFileCount++;
+          try {
+            const file: File = await new Promise((res, rej) => entry.file(res, rej));
+            if (
+              file.type.startsWith('image/') ||
+              /\.(jpe?g|png|webp|arw|cr2|nef|dng|heic)$/i.test(file.name)
+            ) {
+              const targetFolder = currentSingleFolder?.name || 'Photos';
+              collectedFiles.push({ file, folderName: targetFolder });
+            }
+          } catch (err) {
+            console.warn('Error reading loose file', err);
+          }
         }
       }
     }
 
-    // STRICT CHECK: Disallow direct loose photo uploads!
-    if (!hasDirectories && looseFileCount > 0) {
-      setLooseFileWarning(
-        `⚠️ Single photos upload direct allow nahi hai (${looseFileCount} files dropped)! Kripya poora FOLDER drag & drop karein (e.g. 'Haldi', 'Reception' folder) taaki exact folder structure save ho sake.`
-      );
-      showToast('Single photos upload is blocked. Please drop a folder!', 'error');
+    if (collectedFiles.length === 0) {
+      showToast('No valid photos found in the dropped folders/files.', 'error');
       return;
     }
 
-    if (collectedFiles.length > 0) {
-      processFolderUpload(collectedFiles);
-    }
+    processFolderUpload(collectedFiles);
   };
 
-  const handleCopyClientLink = () => {
-    const url = `${window.location.origin}${window.location.pathname}#gallery/${activeEvent.slug || activeEvent.id}`;
-    navigator.clipboard.writeText(url);
-    showToast('Client link copied! Send this on WhatsApp to your client.', 'success');
-  };
+  // Filtered confirmation list
+  const filteredConfirmations = useMemo(() => {
+    if (confirmationFilterFolder === 'all') return confirmedUploads;
+    return confirmedUploads.filter((item) => item.folderName === confirmationFilterFolder);
+  }, [confirmedUploads, confirmationFilterFolder]);
 
-  const handleWhatsAppClient = () => {
-    const url = `${window.location.origin}${window.location.pathname}#gallery/${activeEvent.slug || activeEvent.id}`;
-    let phoneDigits = activeEvent.clientPhone.replace(/[^0-9]/g, '');
-    if (phoneDigits.length === 10) {
-      phoneDigits = '91' + phoneDigits;
-    }
-    const text = encodeURIComponent(
-      `Namaste ${activeEvent.coupleName}! 🙏\n\n` +
-      `Aapke wedding event ("${activeEvent.title}") ke photos selection ke liye upload ho chuke hain!\n\n` +
-      `Kripya niche diye gaye direct link par click karke apni favorite photos heart (❤️) karke select karein:\n\n` +
-      `🔗 Client Gallery Link:\n${url}\n\n` +
-      `⏳ Selection Deadline: ${activeEvent.deadlineDate}\n` +
-      `📸 Studio: ${activeEvent.studioName}\n\n` +
-      `Selection complete hone ke baad gallery mein "Submit Final Selection" par click karein. Dhanyawad!`
-    );
-    showToast(`Opening WhatsApp chat for ${activeEvent.coupleName}...`, 'success');
-    window.open(`https://wa.me/${phoneDigits}?text=${text}`, '_blank');
-  };
+  // Unique folder names present in confirmed uploads
+  const confirmedFolderNames = useMemo(() => {
+    return Array.from(new Set(confirmedUploads.map((c) => c.folderName)));
+  }, [confirmedUploads]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      {/* Top Header */}
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in">
+      {/* Top Breadcrumb & Action Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-neutral-800">
-        <div className="flex items-center gap-3">
+        <div>
           <button
             onClick={() => navigateTo('dashboard')}
-            className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white transition-colors"
+            className="flex items-center gap-2 text-xs font-semibold text-neutral-400 hover:text-white transition-colors mb-2"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Dashboard / Events</span>
           </button>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs uppercase font-bold text-amber-400">
-                Folder-Based Photo Upload
-              </span>
-              <span className="text-neutral-500">•</span>
-              <span className="text-xs text-neutral-400 font-mono">
-                {eventPhotos.length} Total Previews
-              </span>
-            </div>
-            <h1 className="text-2xl font-bold font-heading text-white">{activeEvent.title}</h1>
-            <p className="text-xs text-neutral-400">
-              Client: {activeEvent.coupleName} ({activeEvent.clientPhone})
-            </p>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl sm:text-3xl font-extrabold font-heading text-white tracking-tight">
+              {activeEvent.title}
+            </h1>
+            <span
+              className={`text-xs px-2.5 py-1 rounded-full font-bold border ${
+                activeEvent.pointTier === 'premium'
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-neutral-800 text-neutral-300 border-neutral-700'
+              }`}
+            >
+              {activeEvent.pointTier === 'premium' ? '⚡ Premium (5,000 Cap)' : 'Standard (2,500 Cap)'}
+            </span>
+            <span className="text-xs text-neutral-400 font-mono">
+              {eventPhotos.length} / {MAX_EVENT_CAPACITY} Photos
+            </span>
           </div>
+
+          <p className="text-xs text-neutral-400 mt-1">
+            Couple: <strong className="text-white">{activeEvent.coupleName}</strong> • Phone:{' '}
+            <strong className="text-white">{activeEvent.clientPhone}</strong>
+          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        {/* Top Action Buttons */}
+        <div className="flex items-center gap-2.5">
           <button
-            onClick={handleWhatsAppClient}
-            className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-emerald-600/20 hover:scale-105"
-          >
-            <MessageCircle className="w-3.5 h-3.5 fill-white" />
-            <span>WhatsApp to {activeEvent.coupleName}</span>
-          </button>
-
-          <button
-            onClick={handleCopyClientLink}
-            className="px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            onClick={() => {
+              const url = `${window.location.origin}/#gallery/${activeEvent.slug || activeEvent.id}`;
+              navigator.clipboard.writeText(url);
+              showToast('Client link copied to clipboard!', 'success');
+            }}
+            className="px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs font-semibold flex items-center gap-2 transition"
           >
             <Copy className="w-3.5 h-3.5 text-amber-400" />
             <span>Copy Link</span>
@@ -377,63 +501,27 @@ export const PhotoUploadPage: React.FC = () => {
 
           <button
             onClick={() => navigateTo('client-gallery', activeEvent.id)}
-            className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 hover:from-amber-400 hover:to-amber-200 text-neutral-950 text-xs font-extrabold flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all hover:scale-105"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span>Open Gallery</span>
+            <span>Preview Client Gallery</span>
           </button>
         </div>
       </div>
 
-      {/* 3 STRICT UPLOAD RULES CALLOUT BANNER */}
-      <div className="mt-6 p-4.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200">
-        <div className="flex items-center gap-2 mb-2.5 font-bold text-amber-300 text-sm">
-          <FolderCheck className="w-4 h-4 text-amber-400" />
-          <span>Upload Guidelines:</span>
-        </div>
-        <ol className="space-y-1.5 text-neutral-200 font-medium">
-          <li className="flex items-start gap-2">
-            <span className="font-bold text-amber-400">1.</span>
-            <span>Yahan pe direct photos ka folder hi upload karna hai, single-single photos nahi.</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="font-bold text-amber-400">2.</span>
-            <span>Folder ke andar koi aur sub-folder nahi hona chahiye.</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="font-bold text-amber-400">3.</span>
-            <span>Folder upload hone ke baad koi file name change nahi karna hai.</span>
-          </li>
-        </ol>
-      </div>
-
-      {/* Loose File Warning Banner if triggered */}
-      {looseFileWarning && (
-        <div className="mt-4 p-4 rounded-2xl bg-rose-950/80 border border-rose-500/50 flex items-start justify-between gap-3 text-xs text-rose-200 animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0" />
-            <span>{looseFileWarning}</span>
-          </div>
-          <button
-            onClick={() => setLooseFileWarning(null)}
-            className="text-rose-400 hover:text-white p-1"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Main Grid */}
+      {/* Main Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-6">
-        {/* Left Column: Folders List */}
+        {/* Left Column: Folders Navigation & Folder Creation */}
         <div className="lg:col-span-1 space-y-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-5 shadow-lg">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+          <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-4 sm:p-5 shadow-xl">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-white font-heading flex items-center gap-2">
                 <Layers className="w-4 h-4 text-amber-400" />
-                Event Folders ({eventFolders.length})
+                <span>Folders ({eventFolders.length})</span>
               </h3>
+
               <button
+                type="button"
                 onClick={() => setShowAddFolderInput(!showAddFolderInput)}
                 className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1"
               >
@@ -442,8 +530,9 @@ export const PhotoUploadPage: React.FC = () => {
               </button>
             </div>
 
+            {/* Custom Folder Input */}
             {showAddFolderInput && (
-              <form onSubmit={handleCreateFolder} className="mb-4">
+              <form onSubmit={handleCreateFolder} className="mb-3 animate-in fade-in">
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -456,7 +545,7 @@ export const PhotoUploadPage: React.FC = () => {
                   />
                   <button
                     type="submit"
-                    className="px-3 py-1.5 bg-amber-500 text-neutral-950 font-bold text-xs rounded-xl shadow"
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow"
                   >
                     Add
                   </button>
@@ -464,76 +553,109 @@ export const PhotoUploadPage: React.FC = () => {
               </form>
             )}
 
-            {eventFolders.length === 0 ? (
-              <div className="py-6 text-center text-neutral-500 text-xs">
-                No folders added yet. Select or drop a folder from your computer.
+            {/* Folder List with "All Folders" Option */}
+            <div className="space-y-1.5">
+              {/* Option: View All Folders */}
+              <div
+                onClick={() => setSelectedFolderId('all')}
+                className={`px-3 py-2.5 rounded-xl cursor-pointer flex items-center justify-between transition-all ${
+                  selectedFolderId === 'all'
+                    ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold shadow-sm'
+                    : 'hover:bg-neutral-800 text-neutral-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <FolderCheck className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <span className="text-xs truncate">All Folders</span>
+                </div>
+                <span className="text-[10px] bg-neutral-950 px-2 py-0.5 rounded-full font-mono text-neutral-400">
+                  {eventPhotos.length}
+                </span>
               </div>
-            ) : (
-              <div className="space-y-1.5">
-                {eventFolders.map((folder) => {
-                  const folderPhotosCount = eventPhotos.filter(
-                    (p) => p.folderId === folder.id
-                  ).length;
-                  const isSelected = selectedFolderId === folder.id;
 
-                  return (
-                    <div
-                      key={folder.id}
-                      onClick={() => setSelectedFolderId(folder.id)}
-                      className={`group px-3 py-2.5 rounded-xl cursor-pointer flex items-center justify-between transition-all ${
-                        isSelected
-                          ? 'bg-amber-500/15 border border-amber-500/30 text-amber-300 font-semibold'
-                          : 'hover:bg-neutral-800 text-neutral-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <FolderOpen className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                        <span className="text-xs truncate">{folder.name}</span>
-                      </div>
+              {/* Individual Folders List */}
+              {eventFolders.map((folder) => {
+                const folderPhotosCount = eventPhotos.filter((p) => p.folderId === folder.id).length;
+                const isSelected = selectedFolderId === folder.id;
 
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] bg-neutral-950 px-2 py-0.5 rounded-full font-mono text-neutral-400">
-                          {folderPhotosCount}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFolderVisibility(activeEvent.id, folder.id);
-                          }}
-                          className="text-neutral-500 hover:text-white p-0.5"
-                          title={folder.visible ? 'Visible to client' : 'Hidden from client'}
-                        >
-                          {folder.visible ? (
-                            <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                          ) : (
-                            <EyeOff className="w-3.5 h-3.5 text-neutral-500" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm(`Delete folder "${folder.name}" and its photos?`)) {
-                              deleteFolder(activeEvent.id, folder.id);
-                            }
-                          }}
-                          className="text-neutral-500 hover:text-rose-400 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                return (
+                  <div
+                    key={folder.id}
+                    onClick={() => setSelectedFolderId(folder.id)}
+                    className={`group px-3 py-2 rounded-xl cursor-pointer flex items-center justify-between transition-all ${
+                      isSelected
+                        ? 'bg-amber-500/15 border border-amber-500/30 text-amber-300 font-semibold'
+                        : 'hover:bg-neutral-800 text-neutral-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <FolderOpen className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                      <span className="text-xs truncate">{folder.name}</span>
                     </div>
-                  );
-                })}
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] bg-neutral-950 px-1.5 py-0.5 rounded-full font-mono text-neutral-400">
+                        {folderPhotosCount}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFolderVisibility(activeEvent.id, folder.id);
+                        }}
+                        className="text-neutral-500 hover:text-white p-0.5"
+                        title={folder.visible ? 'Visible to client' : 'Hidden from client'}
+                      >
+                        {folder.visible ? (
+                          <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <EyeOff className="w-3.5 h-3.5 text-neutral-500" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Delete folder "${folder.name}" and its ${folderPhotosCount} photos?`)) {
+                            deleteFolder(activeEvent.id, folder.id);
+                            if (selectedFolderId === folder.id) {
+                              setSelectedFolderId('all');
+                            }
+                          }
+                        }}
+                        className="text-neutral-500 hover:text-rose-400 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Delete folder"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {eventFolders.length === 0 && (
+              <div className="py-6 text-center text-neutral-500 text-xs">
+                No folders yet. Upload multiple folders to automatically create them!
               </div>
             )}
           </div>
+
+          {/* Quick Help Box */}
+          <div className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-4 text-xs text-neutral-400 space-y-2">
+            <div className="flex items-center gap-2 text-white font-bold text-[11px]">
+              <Info className="w-3.5 h-3.5 text-amber-400" />
+              <span>Multi-Folder Upload Tip:</span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-neutral-300">
+              Aap ek sath multiple folders (Haldi, Mehndi, Reception) drag & drop kar sakte hain ya select kar sakte hain.
+            </p>
+          </div>
         </div>
 
-        {/* Right Column: Folder Upload Dropzone & Grid */}
-        <div className="lg:col-span-3 space-y-5">
-          {/* Strictly FOLDER-ONLY Upload Dropzone */}
+        {/* Right Column: Multi-Folder Upload Zone + Live Confirmation Gallery + Photos View */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Multi-Folder Dropzone */}
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -541,17 +663,16 @@ export const PhotoUploadPage: React.FC = () => {
             }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
-            className={`relative rounded-3xl border-2 border-dashed p-8 text-center transition-all ${
+            className={`relative rounded-3xl border-2 border-dashed p-6 sm:p-8 text-center transition-all ${
               isDragging
                 ? 'border-amber-400 bg-amber-500/10 scale-[0.99]'
                 : 'border-neutral-800 bg-neutral-900/80 hover:border-neutral-700'
             }`}
           >
-            {/* Hidden Input configured strictly for DIRECTORY / FOLDER selection */}
+            {/* Hidden Inputs */}
             <input
               ref={folderInputRef}
               type="file"
-              // Webkitdirectory triggers native folder picker
               // @ts-ignore
               webkitdirectory=""
               // @ts-ignore
@@ -560,38 +681,59 @@ export const PhotoUploadPage: React.FC = () => {
               className="hidden"
               onChange={handleFolderInputChange}
             />
+            <input
+              ref={filesInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handlePhotosInputChange}
+            />
 
-            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mx-auto mb-4">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mx-auto mb-3 shadow-inner">
               <FolderUp className="w-8 h-8" />
             </div>
 
             <h3 className="text-xl font-bold text-white font-heading mb-1">
-              Select or Drop Entire Wedding Folder
+              Upload Multiple Folders or Photos
             </h3>
-            <p className="text-xs text-neutral-300 max-w-md mx-auto mb-2">
-              Apne computer se poora folder (jaise <span className="text-amber-400 font-bold">"Haldi"</span>,{' '}
-              <span className="text-amber-400 font-bold">"Reception"</span>, ya poora wedding event folder)
-              yahan drop karein ya select karein.
+            <p className="text-xs text-neutral-300 max-w-lg mx-auto mb-2">
+              Computer se <strong className="text-amber-400">ek sath multiple folders</strong> (e.g.{' '}
+              <span className="text-amber-300 font-semibold">Haldi</span>,{' '}
+              <span className="text-amber-300 font-semibold">Mehndi</span>,{' '}
+              <span className="text-amber-300 font-semibold">Reception</span>) drag & drop karein ya select karein.
             </p>
-            <p className="text-[11px] text-neutral-400 font-medium mb-6">
-              Folder name automatically detect hota hai taaki final auto-copy script 100% accurate photos organize kare.
+            <p className="text-[11px] text-neutral-400 mb-5">
+              ⚡ Ultra-fast 8x concurrent upload • Automatic folder separation on website
             </p>
 
-            {/* Folder Select Action Button */}
+            {/* Action Buttons */}
             <div className="flex flex-wrap items-center justify-center gap-3">
               <button
                 type="button"
                 disabled={isProcessing}
                 onClick={() => folderInputRef.current?.click()}
-                className="px-7 py-3.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 text-neutral-950 font-extrabold text-sm rounded-2xl shadow-xl shadow-amber-500/20 hover:scale-105 transition-all flex items-center gap-2.5"
+                className="px-6 py-3.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 hover:from-amber-400 hover:to-amber-200 text-neutral-950 font-extrabold text-sm rounded-2xl shadow-xl shadow-amber-500/20 hover:scale-105 transition-all flex items-center gap-2"
               >
                 <FolderOpen className="w-5 h-5 text-neutral-950" />
-                <span>Select Folder From Computer</span>
+                <span>Select Folder / Multi-Folders</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={() => filesInputRef.current?.click()}
+                className="px-5 py-3.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white font-bold text-xs rounded-2xl transition flex items-center gap-2"
+              >
+                <UploadCloud className="w-4 h-4 text-amber-400" />
+                <span>
+                  Select Photos ({currentSingleFolder ? currentSingleFolder.name : 'Current Folder'})
+                </span>
               </button>
             </div>
 
-            {/* Watermark toggle */}
-            <div className="mt-5 flex items-center justify-center gap-2 text-xs text-neutral-400">
+            {/* Studio Watermark Option */}
+            <div className="mt-4 flex items-center justify-center gap-2 text-xs text-neutral-400">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -606,24 +748,29 @@ export const PhotoUploadPage: React.FC = () => {
               </label>
             </div>
 
-            {/* High-Speed Concurrent Processing Overlay with Live Thumbnails */}
+            {/* Live Uploading Progress Overlay */}
             {isProcessing && (
-              <div className="absolute inset-0 bg-neutral-950/95 backdrop-blur-md rounded-3xl flex flex-col items-center justify-center p-6 sm:p-8 z-30 animate-in fade-in">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-3 shadow-lg shadow-amber-500/10">
+              <div className="absolute inset-0 bg-neutral-950/95 backdrop-blur-md rounded-3xl flex flex-col items-center justify-center p-6 z-30 animate-in fade-in">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-3 shadow-lg">
                   <div className="w-6 h-6 border-3 border-amber-400 border-t-transparent rounded-full animate-spin" />
                 </div>
 
                 <div className="text-base font-extrabold text-white font-heading mb-1 text-center">
-                  Compressing & Uploading: "{processingStatus.folder}"
+                  Uploading to Folder: "{processingStatus.folder}"
                 </div>
 
                 <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 font-mono font-bold px-2 py-0.5 rounded border border-amber-500/30">
-                    ⚡ 5x Concurrent Acceleration
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 font-mono font-bold px-2.5 py-0.5 rounded border border-amber-500/30">
+                    ⚡ 8x Concurrent Acceleration
                   </span>
-                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold px-2 py-0.5 rounded border border-emerald-500/30">
-                    🗜️ Ultra Storage Compression (~55 KB)
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold px-2.5 py-0.5 rounded border border-emerald-500/30">
+                    ✓ Live Thumbnail Confirmation Active
                   </span>
+                  {processingStatus.speedFps > 0 && (
+                    <span className="text-[10px] bg-neutral-800 text-neutral-300 font-mono px-2 py-0.5 rounded">
+                      Speed: ~{processingStatus.speedFps} photos/sec
+                    </span>
+                  )}
                 </div>
 
                 <div className="text-xs font-mono text-neutral-300 mb-2">
@@ -632,165 +779,354 @@ export const PhotoUploadPage: React.FC = () => {
                   {Math.round(((processingStatus.current || 0) / (processingStatus.total || 1)) * 100)}%)
                 </div>
 
-                {/* Main Progress Bar */}
-                <div className="w-full max-w-md h-3 bg-neutral-900 rounded-full border border-neutral-800 overflow-hidden shadow-inner mb-5">
+                {/* Progress bar */}
+                <div className="w-full max-w-md h-3 bg-neutral-900 rounded-full border border-neutral-800 overflow-hidden shadow-inner mb-4">
                   <div
-                    className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-400 transition-all duration-200 rounded-full"
+                    className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-400 transition-all duration-150 rounded-full"
                     style={{
-                      width: `${Math.max(3, ((processingStatus.current || 0) / (processingStatus.total || 1)) * 100)}%`,
+                      width: `${Math.max(
+                        3,
+                        ((processingStatus.current || 0) / (processingStatus.total || 1)) * 100
+                      )}%`,
                     }}
                   />
                 </div>
 
-                {/* Live Real-time Thumbnail Preview Strip (Small/Medium thumbnails) */}
-                {liveThumbnails.length > 0 && (
-                  <div className="w-full max-w-lg">
-                    <div className="text-[11px] font-semibold text-neutral-400 mb-2 flex items-center justify-between">
-                      <span>Live Uploading Thumbnails:</span>
-                      <span className="text-[10px] text-emerald-400 font-mono">✓ High Speed Encoded</span>
-                    </div>
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                      {liveThumbnails.map((thumb) => (
-                        <div
-                          key={thumb.id}
-                          className="relative aspect-square rounded-xl overflow-hidden border border-amber-500/40 bg-neutral-900 shadow-md animate-in fade-in zoom-in-95"
-                        >
-                          <img
-                            src={thumb.url}
-                            alt={thumb.name}
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                          <span className="absolute bottom-1 left-1 right-1 text-[9px] font-mono text-white truncate drop-shadow">
-                            {thumb.name}
-                          </span>
-                          <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-emerald-500 text-white rounded-full flex items-center justify-center text-[8px] font-bold shadow">
-                            ✓
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <p className="text-[11px] text-neutral-400 animate-pulse">
+                  Uploading photos with small thumbnails in real-time below...
+                </p>
               </div>
             )}
           </div>
 
-          {/* Photos View for Currently Selected Folder */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-white font-heading flex items-center gap-2">
-                <FolderOpen className="w-4 h-4 text-amber-400" />
-                <span>Photos in "{currentFolder?.name}"</span>
-                <span className="text-xs font-mono text-neutral-400 font-normal">
-                  ({activeFolderPhotos.length} photos)
-                </span>
-              </h3>
-            </div>
+          {/* REAL-TIME UPLOAD CONFIRMATION GALLERY */}
+          {confirmedUploads.length > 0 && (
+            <div className="bg-neutral-900/90 border border-emerald-500/30 rounded-3xl p-5 shadow-2xl animate-in fade-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>Live Upload Confirmation Gallery</span>
+                      <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-full font-mono font-bold">
+                        {confirmedUploads.length} Confirmed Uploaded
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-neutral-400">
+                      Visual confirmation: Ye saare photos successfully upload ho chuke hain aur website par save hain.
+                    </p>
+                  </div>
+                </div>
 
-            {activeFolderPhotos.length === 0 ? (
-              <div className="text-center py-12 bg-neutral-900/40 border border-neutral-800 rounded-3xl">
-                <ImageIcon className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
-                <p className="text-xs text-neutral-400">No photos in this folder yet.</p>
-                <p className="text-[11px] text-neutral-500 mt-1">
-                  Upload this folder from your PC or click a Quick Demo Folder on the left.
-                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setConfirmedUploads([])}
+                    className="text-[11px] text-neutral-500 hover:text-neutral-300 px-2 py-1 rounded hover:bg-neutral-800"
+                  >
+                    Clear Confirmation View
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
-                {activeFolderPhotos.map((photo) => (
+
+              {/* Folder filter pills for confirmation grid */}
+              {confirmedFolderNames.length > 1 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto py-2.5 scrollbar-none">
+                  <span className="text-[11px] text-neutral-400 mr-1 flex items-center gap-1">
+                    <Filter className="w-3 h-3" /> Filter:
+                  </span>
+                  <button
+                    onClick={() => setConfirmationFilterFolder('all')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                      confirmationFilterFolder === 'all'
+                        ? 'bg-emerald-500 text-neutral-950'
+                        : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    All ({confirmedUploads.length})
+                  </button>
+                  {confirmedFolderNames.map((fName) => {
+                    const count = confirmedUploads.filter((c) => c.folderName === fName).length;
+                    return (
+                      <button
+                        key={fName}
+                        onClick={() => setConfirmationFilterFolder(fName)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                          confirmationFilterFolder === fName
+                            ? 'bg-emerald-500 text-neutral-950'
+                            : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                        }`}
+                      >
+                        <span>📁 {fName}</span>
+                        <span className="font-mono text-[10px]">({count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Confirmation Thumbnails Grid */}
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 mt-3 max-h-80 overflow-y-auto pr-1">
+                {filteredConfirmations.map((item) => (
                   <div
-                    key={photo.id}
-                    className="group relative rounded-2xl overflow-hidden aspect-[4/5] bg-neutral-900 border border-neutral-800"
+                    key={item.id}
+                    className="group relative aspect-square rounded-xl overflow-hidden bg-neutral-950 border border-emerald-500/40 shadow-sm animate-in fade-in zoom-in-95"
                   >
                     <img
-                      src={photo.url}
-                      alt={photo.filename}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      src={item.thumbnailUrl || item.url}
+                      alt={item.filename}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      loading="lazy"
                     />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none" />
 
-                    {/* Gradient Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-80" />
+                    {/* Green Verification Checkmark Badge */}
+                    <div className="absolute top-1 right-1 w-4 h-4 bg-emerald-500 text-neutral-950 rounded-full flex items-center justify-center text-[9px] font-extrabold shadow">
+                      ✓
+                    </div>
 
-                    {/* Delete Photo Button */}
-                    <button
-                      type="button"
-                      onClick={() => deletePhotoFromEvent(activeEvent.id, photo.id)}
-                      className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                      title="Delete photo"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Folder Pill */}
+                    <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-sm text-[8px] font-semibold text-amber-300 truncate max-w-[70%]">
+                      {item.folderName}
+                    </div>
 
-                    {/* Selection status indicator */}
-                    {photo.isSelected && (
-                      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold shadow flex items-center gap-1">
-                        <span>❤️ Selected</span>
-                      </div>
-                    )}
-
-                    {/* Filename footer */}
-                    <div className="absolute bottom-2 left-2 right-2">
-                      <p className="text-[11px] font-mono font-medium text-white truncate drop-shadow">
-                        {photo.filename}
-                      </p>
-                      <div className="flex items-center justify-between text-[10px] text-neutral-400">
-                        <span className="text-amber-400/90 font-sans">{photo.folderName}</span>
-                        <span>
-                          {photo.sizeBytes ? `${Math.round(photo.sizeBytes / 1024)} KB` : 'Preview'}
-                        </span>
-                      </div>
+                    {/* File name */}
+                    <div className="absolute bottom-1 left-1 right-1 text-[8px] font-mono text-white truncate drop-shadow">
+                      {item.filename}
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* WEBSITE DISPLAY: FOLDERS & PHOTOS (Separated as uploaded) */}
+          <div className="space-y-6">
+            {selectedFolderId === 'all' ? (
+              // VIEW 1: "ALL FOLDERS" - Each uploaded folder shown separately in its own section!
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-5 h-5 text-amber-400" />
+                    <h2 className="text-base font-bold text-white font-heading">
+                      Folders & Photos
+                    </h2>
+                    <span className="text-xs px-2 py-0.5 bg-neutral-800 text-neutral-300 rounded-full font-mono">
+                      {eventPhotos.length} Total Photos • {eventFolders.length} Folders
+                    </span>
+                  </div>
+                </div>
+
+                {eventFolders.length === 0 ? (
+                  <div className="text-center py-12 bg-neutral-900/40 border border-neutral-800 rounded-3xl">
+                    <FolderOpen className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
+                    <p className="text-xs text-neutral-400">Abhi tak koi photo folder upload nahi hua hai.</p>
+                    <p className="text-[11px] text-neutral-500 mt-1">
+                      Upar diye gaye dropzone mein apne wedding folders drop karein.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-8">
+                    {eventFolders.map((folder) => {
+                      const photosInThisFolder = photosByFolder.get(folder.id) || [];
+
+                      return (
+                        <div
+                          key={folder.id}
+                          className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-5 shadow-lg"
+                        >
+                          {/* Folder Section Header */}
+                          <div className="flex items-center justify-between pb-3 mb-4 border-b border-neutral-800/80">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                                <FolderOpen className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <h3 className="text-sm font-extrabold text-white font-heading flex items-center gap-2">
+                                  <span>{folder.name}</span>
+                                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-neutral-800 font-mono text-amber-300 font-normal">
+                                    {photosInThisFolder.length} photos
+                                  </span>
+                                </h3>
+                                <p className="text-[10px] text-neutral-400">
+                                  Folder Status: {folder.visible ? '✓ Client ko dikhega' : '👁️ Client se hidden'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setSelectedFolderId(folder.id)}
+                                className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-200 transition"
+                              >
+                                View Only This Folder
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Photos Grid for this specific folder */}
+                          {photosInThisFolder.length === 0 ? (
+                            <div className="py-8 text-center text-xs text-neutral-500">
+                              Is folder mein koi photos nahi hain.
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                              {photosInThisFolder.map((photo) => (
+                                <div
+                                  key={photo.id}
+                                  className="group relative rounded-2xl overflow-hidden aspect-[4/5] bg-neutral-950 border border-neutral-800 hover:border-amber-500/40 transition shadow-sm"
+                                >
+                                  <img
+                                    src={photo.thumbnailUrl || photo.url}
+                                    alt={photo.filename}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    loading="lazy"
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none" />
+
+                                  {/* Delete photo button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (confirm(`Delete "${photo.filename}"?`)) {
+                                        deletePhotoFromEvent(activeEvent.id, photo.id);
+                                      }
+                                    }}
+                                    className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-neutral-400 hover:text-rose-400 hover:bg-black/90 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="Delete photo"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  {/* Bottom info */}
+                                  <div className="absolute bottom-2 left-2 right-2 truncate">
+                                    <p className="text-[10px] font-mono text-white truncate drop-shadow">
+                                      {photo.filename}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              // VIEW 2: SINGLE SELECTED FOLDER
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="w-5 h-5 text-amber-400" />
+                    <h2 className="text-base font-bold text-white font-heading">
+                      Folder: "{currentSingleFolder?.name}"
+                    </h2>
+                    <span className="text-xs font-mono text-neutral-400">
+                      ({currentFolderPhotos.length} photos)
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => setSelectedFolderId('all')}
+                    className="text-xs font-semibold text-amber-400 hover:text-amber-300"
+                  >
+                    ← View All Folders
+                  </button>
+                </div>
+
+                {currentFolderPhotos.length === 0 ? (
+                  <div className="text-center py-12 bg-neutral-900/40 border border-neutral-800 rounded-3xl">
+                    <ImageIcon className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
+                    <p className="text-xs text-neutral-400">No photos in this folder yet.</p>
+                    <p className="text-[11px] text-neutral-500 mt-1">
+                      Drag and drop photos or click "Select Photos" to add into "{currentSingleFolder?.name}".
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+                    {currentFolderPhotos.map((photo) => (
+                      <div
+                        key={photo.id}
+                        className="group relative rounded-2xl overflow-hidden aspect-[4/5] bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 transition shadow-sm"
+                      >
+                        <img
+                          src={photo.thumbnailUrl || photo.url}
+                          alt={photo.filename}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none" />
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Delete "${photo.filename}"?`)) {
+                              deletePhotoFromEvent(activeEvent.id, photo.id);
+                            }
+                          }}
+                          className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-neutral-400 hover:text-rose-400 hover:bg-black/90 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Delete photo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <div className="absolute bottom-2 left-2 right-2 truncate">
+                          <p className="text-[10px] font-mono text-white truncate drop-shadow">
+                            {photo.filename}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* POP-WARNING MODAL: In one event max photos capacity 3000 */}
+      {/* Capacity Limit Warning Modal */}
       {capacityWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
-          <div className="relative w-full max-w-md bg-neutral-900 border border-rose-500/50 rounded-3xl p-6 sm:p-7 shadow-2xl text-center">
-            <div className="w-16 h-16 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mx-auto mb-4">
+        <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-neutral-900 border border-rose-500/40 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl text-center">
+            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto mb-4">
               <AlertTriangle className="w-8 h-8" />
             </div>
 
             <h3 className="text-xl font-extrabold text-white font-heading mb-1.5">
-              Event Photos Capacity Limit (Max 3000)
+              Event Photos Capacity Limit (Max {capacityWarning.max})
             </h3>
             <p className="text-xs text-rose-300 font-semibold mb-4">
-              In one event max photos capacity is 3000 photos!
+              In one event, maximum photo limit is{' '}
+              {capacityWarning.max === 5000 ? '5,000 (Premium Point)' : '2,500 (Standard Point)'}.
             </p>
 
-            <div className="p-3.5 bg-neutral-950 rounded-2xl border border-neutral-800 text-xs space-y-2 mb-5 text-left font-mono">
-              <div className="flex items-center justify-between text-neutral-300">
-                <span>Already Uploaded:</span>
-                <span className="font-bold text-white">{capacityWarning.current} photos</span>
+            <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-4 text-xs text-left mb-6 space-y-2">
+              <div className="flex justify-between text-neutral-400">
+                <span>Already uploaded in this event:</span>
+                <strong className="text-white font-mono">{capacityWarning.current} photos</strong>
               </div>
-              <div className="flex items-center justify-between text-neutral-300">
-                <span>You Tried To Add:</span>
-                <span className="font-bold text-rose-400">+{capacityWarning.attempted} photos</span>
+              <div className="flex justify-between text-neutral-400">
+                <span>Attempting to upload:</span>
+                <strong className="text-rose-400 font-mono">+{capacityWarning.attempted} photos</strong>
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-neutral-800 text-neutral-300">
-                <span>Total Would Be:</span>
-                <span className="font-extrabold text-rose-300 font-sans text-sm">
+              <div className="border-t border-neutral-800 pt-2 flex justify-between font-bold">
+                <span className="text-neutral-300">Total would be:</span>
+                <span className="text-rose-400 font-mono">
                   {capacityWarning.current + capacityWarning.attempted} / {capacityWarning.max}
                 </span>
               </div>
             </div>
 
-            <p className="text-[11px] text-neutral-400 mb-5 leading-relaxed">
-              Ek event mein maximum 3,000 photos upload karne ki limit hai taaki client browser aur mobile par gallery bina kisi lag ke fast open ho sake. Kripya folder se kam photos select karein.
-            </p>
-
             <button
               type="button"
               onClick={() => setCapacityWarning(null)}
-              className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow-lg hover:scale-105 transition-all"
+              className="w-full py-3 bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs rounded-xl transition"
             >
-              OK, Got It (Theek Hai)
+              Okay, I Understand
             </button>
           </div>
         </div>

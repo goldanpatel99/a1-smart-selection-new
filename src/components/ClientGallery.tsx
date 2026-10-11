@@ -29,7 +29,7 @@ import { DynamicSecurityWatermark } from './DynamicSecurityWatermark';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 
 export const ClientGallery: React.FC = () => {
-  const { activeEvent, users, togglePhotoSelection, submitClientSelection, showToast } = useApp();
+  const { activeEvent, users, togglePhotoSelection, submitClientSelection, showToast, navigateTo } = useApp();
 
   const [activeFolderId, setActiveFolderId] = useState<string>('all');
   const [filterMode, setFilterMode] = useState<'all' | 'selected' | 'unselected'>('all');
@@ -219,6 +219,27 @@ export const ClientGallery: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-28">
+      {/* Interactive Demo Mode Top Banner */}
+      {activeEvent.id === 'demo-sample-event' && (
+        <div className="bg-gradient-to-r from-amber-500/20 via-amber-400/10 to-amber-500/20 border-b border-amber-500/40 px-4 py-3 sticky top-0 z-50 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs text-amber-200">
+          <div className="flex items-center gap-2 mx-auto sm:mx-0">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+            </span>
+            <span>
+              <strong>Client Gallery Interactive Demo:</strong> Keval 4 sample photos showcase (Haldi, Sangeet, Wedding, Reception). Photo par Heart ❤️ tap karein selection test karne ke liye!
+            </span>
+          </div>
+          <button
+            onClick={() => navigateTo('landing')}
+            className="mx-auto sm:mx-0 px-3.5 py-1.5 bg-amber-500 text-neutral-950 font-bold rounded-xl text-xs hover:bg-amber-400 transition shadow"
+          >
+            ← Back to Home
+          </button>
+        </div>
+      )}
+
       {/* Hero Header */}
       <div className="relative py-12 px-4 sm:px-6 lg:px-8 text-center border-b border-neutral-800/80 bg-gradient-to-b from-neutral-900/80 to-neutral-950">
         <div className="max-w-3xl mx-auto">

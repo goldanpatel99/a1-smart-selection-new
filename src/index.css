@@ -29,3 +29,51 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
 }
+
+/* Energetic Electric Current & Spark Animations for Premium Points */
+@keyframes electricFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes electricSurge {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.3), 0 0 20px rgba(236, 72, 153, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(168, 85, 247, 0.6), 0 0 35px rgba(56, 189, 248, 0.35), inset 0 0 10px rgba(168, 85, 247, 0.2);
+  }
+}
+
+@keyframes lightningPulse {
+  0%, 100% {
+    opacity: 0.6;
+    filter: drop-shadow(0 0 2px rgba(250, 204, 21, 0.5));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.95)) drop-shadow(0 0 12px rgba(168, 85, 247, 0.8));
+    transform: scale(1.1);
+  }
+}
+
+.electric-current-glow {
+  animation: electricSurge 2.2s infinite ease-in-out;
+}
+
+.electric-gradient-bg {
+  background: linear-gradient(135deg, #7c3aed, #a855f7, #ec4899, #6366f1);
+  background-size: 300% 300%;
+  animation: electricFlow 3.5s ease infinite;
+}
+
+.lightning-spark-icon {
+  animation: lightningPulse 1.5s infinite ease-in-out;
+}

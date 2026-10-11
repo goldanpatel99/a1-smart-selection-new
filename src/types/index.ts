@@ -1,3 +1,5 @@
+export type PointTier = 'standard' | 'premium';
+
 export interface Photo {
   id: string;
   filename: string;
@@ -25,7 +27,7 @@ export interface WeddingEvent {
   slug: string; // for client link
   title: string; // e.g. "Sharma Wedding 2026"
   coupleName: string; // e.g. "Aarav & Priya"
-  clientPhone: string;
+  clientPhone?: string;
   clientEmail?: string;
   photographerId: string;
   studioName: string;
@@ -52,6 +54,9 @@ export interface WeddingEvent {
   studioInstagram?: string;
   studioAddress?: string;
   studioTagline?: string;
+  // Tier & photo limit
+  pointTier?: PointTier; // 'standard' (2,500 photos) | 'premium' (5,000 photos)
+  maxPhotoCapacity?: number; // 2500 or 5000
 }
 
 export interface User {
@@ -62,7 +67,9 @@ export interface User {
   password?: string;
   studioName: string;
   role: 'photographer' | 'admin';
-  points: number; // starts at 0 for new photographers
+  points: number; // total points (standardPoints + premiumPoints)
+  standardPoints?: number; // 2,500 photos upload access / point (₹149/pt base)
+  premiumPoints?: number;  // 5,000 photos upload access / point (₹249/pt base)
   createdAt: string;
   isBlocked?: boolean; // Admin can temporarily block access
   blockedAt?: string;
@@ -92,16 +99,20 @@ export interface PointTransaction {
   createdAt: string;
   paymentMethod?: string;
   amountRupees?: number;
+  pointTier?: PointTier;
 }
 
 export interface PricingPackage {
   id: string;
+  tier: PointTier;
   points: number;
   priceRupees: number;
+  photosLimit: number; // 2500 for standard, 5000 for premium
   name: string;
   tagline: string;
   isPopular?: boolean;
   savingsText?: string;
+  originalPriceRupees?: number;
 }
 
 export interface AdminSettings {

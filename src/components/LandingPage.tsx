@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { WeddingEvent } from '../types';
+import { WeddingEvent, PointTier } from '../types';
 import {
   Heart,
   Zap,
@@ -54,7 +54,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const basePricePerPoint =
     adminSettings.pricingPackages.find((p) => p.points === 1)?.priceRupees ||
     (adminSettings.pricingPackages[0]?.priceRupees / adminSettings.pricingPackages[0]?.points) ||
-    110;
+    149;
+
+  const [pricingTab, setPricingTab] = useState<PointTier>('standard');
 
   // Demo interactive state on landing page
   const [demoSelected, setDemoSelected] = useState<Record<string, boolean>>({
@@ -183,15 +185,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </button>
               )}
 
-              {sampleEvent && (
-                <button
-                  onClick={() => navigateTo('client-gallery', sampleEvent.id)}
-                  className="w-full sm:w-auto px-6 py-4 bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/80 text-white font-semibold text-base rounded-2xl transition-all flex items-center justify-center gap-2"
-                >
-                  <Heart className="w-5 h-5 text-rose-500 fill-rose-500" />
-                  <span>Try Client Gallery Demo</span>
-                </button>
-              )}
+              <button
+                onClick={() => navigateTo('client-gallery', 'demo-sample-event')}
+                className="w-full sm:w-auto px-6 py-4 bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/80 hover:border-amber-500/50 text-white font-semibold text-base rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg"
+              >
+                <Heart className="w-5 h-5 text-rose-500 fill-rose-500" />
+                <span>Try Client Gallery Demo</span>
+              </button>
             </div>
 
             {/* Micro value props with auto-calculated rates */}
@@ -502,127 +502,188 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       {/* Pricing / Points Section */}
       <section id="pricing" className="py-20 relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-2xl mx-auto mb-16">
+          <div className="text-center max-w-2xl mx-auto mb-10">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold mb-3">
               <Coins className="w-3.5 h-3.5" />
-              <span>Simple Points Model</span>
+              <span>Simple Points Model • No Recurring Fees</span>
             </div>
             <h2 className="text-3xl sm:text-4xl font-extrabold font-heading text-white">
               Pay Only When You Have a Wedding
             </h2>
             <p className="text-sm text-neutral-400 mt-2">
-              Koi monthly recurring charges nahi. Har event banane ke liye sirf {adminSettings.pointsPerEvent || 1} point lagta hai.
-              Client ke liye 100% Free!
+              Koi monthly subscription ya hidden charge nahi. Standard point mein 2,500 photos aur Premium point mein 5,000 photos tak access milta hai.
             </p>
           </div>
 
+          {/* Tier Switcher Tabs */}
+          <div className="flex justify-center mb-8">
+            <div className="inline-grid grid-cols-2 gap-2 p-1.5 bg-neutral-900 border border-neutral-800 rounded-2xl max-w-md w-full">
+              <button
+                type="button"
+                onClick={() => setPricingTab('standard')}
+                className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                  pricingTab === 'standard'
+                    ? 'bg-neutral-800 text-amber-400 border border-amber-500/30 shadow'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <Coins className="w-4 h-4 text-amber-400" />
+                <span>Standard (2,500 Photos/Pt)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPricingTab('premium')}
+                className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 relative overflow-hidden group ${
+                  pricingTab === 'premium'
+                    ? 'bg-gradient-to-r from-purple-950/90 via-neutral-900 to-amber-950/90 text-white border-2 border-amber-400 shadow-xl shadow-amber-500/25 ring-2 ring-amber-400/40'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                {pricingTab === 'premium' && (
+                  <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-xl">
+                    <div className="absolute -inset-[100%] bg-[conic-gradient(from_0deg,transparent_0_340deg,rgba(251,191,36,0.6)_360deg)] animate-[spin_3s_linear_infinite] opacity-80" />
+                    <div className="absolute inset-[1px] bg-neutral-950/90 rounded-xl" />
+                  </div>
+                )}
+                <span className="relative z-10 flex items-center gap-2">
+                  <Zap className={`w-4 h-4 ${pricingTab === 'premium' ? 'text-amber-300 fill-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-pulse' : 'text-purple-400'}`} />
+                  <span>⚡ Premium (5,000 Photos/Pt)</span>
+                </span>
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            {adminSettings.pricingPackages.map((pkg) => {
-              const perEventCost = Math.round(pkg.priceRupees / Math.max(1, pkg.points));
-              const autoSavings = Math.max(0, (basePricePerPoint * pkg.points) - pkg.priceRupees);
+            {adminSettings.pricingPackages
+              .filter((pkg) => (pkg.tier || 'standard') === pricingTab)
+              .map((pkg) => {
+                const isPremium = pricingTab === 'premium';
+                const perPointCost = Math.round(pkg.priceRupees / Math.max(1, pkg.points));
 
-              return (
-                <div
-                  key={pkg.id}
-                  className={`relative bg-neutral-900 border rounded-3xl p-7 flex flex-col justify-between transition-all ${
-                    pkg.isPopular
-                      ? 'border-amber-500 ring-2 ring-amber-500/30 shadow-2xl shadow-amber-500/10 scale-105'
-                      : 'border-neutral-800 hover:border-neutral-700'
-                  }`}
-                >
-                  {pkg.isPopular ? (
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 text-xs font-extrabold uppercase tracking-wider px-3 py-1 rounded-full shadow">
-                      {pkg.savingsText || (autoSavings > 0 ? `Save ₹${autoSavings} 🔥` : 'Best Value 🔥')}
-                    </div>
-                  ) : autoSavings > 0 ? (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-neutral-800 text-emerald-400 border border-emerald-500/30 text-xs font-bold px-3 py-0.5 rounded-full shadow">
-                      Save ₹{autoSavings}
-                    </div>
-                  ) : null}
+                return (
+                  <div
+                    key={pkg.id}
+                    className={`relative bg-neutral-900 border rounded-3xl p-7 flex flex-col justify-between transition-all duration-300 ${
+                      pkg.isPopular
+                        ? isPremium
+                          ? 'border-purple-400 ring-2 ring-purple-500/30 shadow-2xl shadow-purple-500/20 scale-105 bg-gradient-to-b from-purple-950/30 via-neutral-900 to-neutral-900'
+                          : 'border-amber-500 ring-2 ring-amber-500/30 shadow-2xl shadow-amber-500/10 scale-105'
+                        : 'border-neutral-800 hover:border-neutral-700'
+                    }`}
+                  >
+                    {pkg.savingsText && (
+                      <div
+                        className={`absolute -top-3.5 left-1/2 -translate-x-1/2 text-xs font-extrabold uppercase tracking-wider px-3.5 py-1 rounded-full shadow ${
+                          isPremium
+                            ? 'bg-gradient-to-r from-purple-500 to-amber-400 text-neutral-950'
+                            : 'bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950'
+                        }`}
+                      >
+                        {pkg.savingsText}
+                      </div>
+                    )}
 
-                  <div>
-                    <h3 className="text-lg font-bold text-white font-heading">{pkg.name}</h3>
-                    <p className="text-xs text-neutral-400 mt-1">{pkg.tagline}</p>
-
-                    <div className="my-5">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-4xl font-extrabold text-white">
-                          ₹{pkg.priceRupees.toLocaleString('en-IN')}
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-bold text-white font-heading">{pkg.name}</h3>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            isPremium
+                              ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                              : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                          }`}
+                        >
+                          {pkg.photosLimit.toLocaleString()} Photos / Pt
                         </span>
-                        <span className="text-xs text-neutral-400">/ one-time</span>
                       </div>
-                      <div className="text-xs text-emerald-400 font-semibold mt-1 flex items-center gap-1.5">
-                        <span>⚡ ₹{perEventCost} per event</span>
-                        {autoSavings > 0 && (
-                          <span className="text-[11px] text-amber-300 font-mono">
-                            (Save ₹{autoSavings})
+                      <p className="text-xs text-neutral-400 mt-1">{pkg.tagline}</p>
+
+                      <div className="my-5">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-4xl font-extrabold text-white font-mono">
+                            ₹{pkg.priceRupees.toLocaleString('en-IN')}
                           </span>
-                        )}
+                          {pkg.originalPriceRupees && pkg.originalPriceRupees > pkg.priceRupees && (
+                            <span className="text-sm text-neutral-500 line-through font-mono">
+                              ₹{pkg.originalPriceRupees}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-emerald-400 font-semibold mt-1 flex items-center gap-1.5">
+                          <span>₹{perPointCost} per point</span>
+                          {pkg.savingsText && (
+                            <span className="text-[11px] text-amber-300 font-mono">
+                              ({pkg.savingsText})
+                            </span>
+                          )}
+                        </div>
                       </div>
+
+                      <div className="p-3 bg-neutral-950 rounded-2xl border border-neutral-800 mb-6">
+                        <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                          {isPremium ? <Zap className="w-4 h-4" /> : <Coins className="w-4 h-4" />}
+                          <span>{pkg.points} {pkg.points === 1 ? 'Point' : 'Points'} Included</span>
+                        </div>
+                        <div className="text-[11px] text-neutral-400 mt-1">
+                          Total {(pkg.photosLimit * pkg.points).toLocaleString()} Photos Access • {pkg.points} Wedding Events
+                        </div>
+                      </div>
+
+                      <ul className="space-y-2.5 text-xs text-neutral-300">
+                        <li className="flex items-center gap-2">
+                          <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                          <span>{pkg.photosLimit.toLocaleString()} photos upload per event</span>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                          <span>Automated 1-Click copy script (.bat & .sh)</span>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                          <span>Lightroom search code export</span>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                          <span>Custom Studio Branding & Watermark</span>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                          <span>Points Never Expire</span>
+                        </li>
+                      </ul>
                     </div>
 
-                    <div className="p-3 bg-neutral-950 rounded-2xl border border-neutral-800 mb-6">
-                      <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                        <Coins className="w-4 h-4" />
-                        <span>{pkg.points} Points Included</span>
-                      </div>
-                      <div className="text-[11px] text-neutral-400 mt-1">
-                        {Math.floor(pkg.points / (adminSettings.pointsPerEvent || 1))} Full Wedding Events create kar sakte hain.
-                      </div>
-                    </div>
-
-                  <ul className="space-y-2.5 text-xs text-neutral-300">
-                    <li className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                      <span>Unlimited photo preview uploads</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                      <span>Automated 1-Click copy script & Lightroom export</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                      <span>Lightroom search code export</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                      <span>Custom Studio Watermark</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                      <span>Points Never Expire</span>
-                    </li>
-                  </ul>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (currentUser) {
-                      onOpenBuyPoints();
-                    } else {
-                      onOpenAuth('signup');
-                    }
-                  }}
-                  className={`w-full mt-8 py-3 px-4 rounded-xl font-bold text-xs transition-all ${
-                    pkg.isPopular
-                      ? 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-neutral-950 shadow-lg shadow-amber-500/20'
-                      : 'bg-neutral-800 hover:bg-neutral-700 text-white'
-                  }`}
-                >
-                  {currentUser ? `Buy ${pkg.points} Points` : 'Signup & Buy Points'}
-                </button>
-              </div>
-            );
-          })}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentUser) {
+                          onOpenBuyPoints();
+                        } else {
+                          onOpenAuth('signup');
+                        }
+                      }}
+                      className={`w-full mt-8 py-3 px-4 rounded-xl font-bold text-xs transition-all ${
+                        pkg.isPopular
+                          ? isPremium
+                            ? 'bg-gradient-to-r from-purple-500 to-amber-400 hover:from-purple-400 hover:to-amber-300 text-neutral-950 shadow-lg shadow-purple-500/20'
+                            : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-neutral-950 shadow-lg shadow-amber-500/20'
+                          : 'bg-neutral-800 hover:bg-neutral-700 text-white'
+                      }`}
+                    >
+                      {currentUser ? `Buy ${pkg.points} Points (₹${pkg.priceRupees})` : 'Signup & Buy Points'}
+                    </button>
+                  </div>
+                );
+              })}
           </div>
 
           {/* Points rule callout */}
           <div className="mt-12 p-4 max-w-2xl mx-auto bg-neutral-900/80 border border-neutral-800 rounded-2xl flex items-center justify-between gap-4 text-xs text-neutral-400">
             <div>
-              <span className="font-semibold text-neutral-200">Rule Summary:</span> Naye
-              photographer signup par balance <span className="text-white font-mono">0 Points</span>{' '}
-              hota hai. Naya event = 1 point. Deadline 30 din extend = 1 point.
+              <span className="font-semibold text-neutral-200">Point Access:</span> Standard Point ={' '}
+              <span className="text-white font-mono">2,500 Photos</span> • Premium Point ={' '}
+              <span className="text-amber-400 font-mono">5,000 Photos</span>. Points lifetime safe rehte hain.
             </div>
             <button
               onClick={() => onOpenAuth('admin')}
