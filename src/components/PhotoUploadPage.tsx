@@ -90,6 +90,7 @@ async function scanDirectoryEntry(
 
 export const PhotoUploadPage: React.FC = () => {
   const {
+    events,
     activeEvent,
     currentUser,
     navigateTo,
@@ -133,6 +134,8 @@ export const PhotoUploadPage: React.FC = () => {
 
   const eventFolders = activeEvent?.folders || [];
   const eventPhotos = activeEvent?.photos || [];
+  const displayPhotosCount = Math.max(eventPhotos.length, activeEvent?.photosCount || 0);
+  const isPhotosLoading = eventPhotos.length === 0 && (activeEvent?.photosCount || 0) > 0;
 
   // Capacity limit based on event tier (2500 Standard, 5000 Premium)
   const MAX_EVENT_CAPACITY =
@@ -458,15 +461,60 @@ export const PhotoUploadPage: React.FC = () => {
   }, [confirmedUploads]);
 
   if (!activeEvent) {
+    const userEvents = events.filter((e) =>
+      currentUser?.role === 'admin'
+        ? true
+        : e.photographerId === currentUser?.id ||
+          (Boolean(currentUser?.email) && (e as any).photographerEmail?.toLowerCase() === currentUser?.email?.toLowerCase())
+    );
+
     return (
-      <div className="max-w-4xl mx-auto px-4 py-16 text-center">
-        <h2 className="text-xl font-bold text-white mb-2">No Event Selected</h2>
-        <button
-          onClick={() => navigateTo('dashboard')}
-          className="px-4 py-2 bg-neutral-800 text-white rounded-xl text-xs hover:bg-neutral-700 transition"
-        >
-          Return to Dashboard
-        </button>
+      <div className="max-w-3xl mx-auto px-4 py-16 text-center animate-in fade-in">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto mb-4">
+          <FolderOpen className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-bold text-white mb-2 font-heading">Kripya Event Select Karein</h2>
+        <p className="text-sm text-neutral-400 mb-6">
+          Photos upload karne ke liye apna event select karein ya Dashboard par jaakar naya event banayein.
+        </p>
+
+        {userEvents.length > 0 ? (
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 text-left mb-6 shadow-xl">
+            <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">
+              Aapke Events ({userEvents.length}):
+            </h3>
+            <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+              {userEvents.map((evt) => (
+                <div
+                  key={evt.id}
+                  onClick={() => navigateTo('photo-upload', evt.id)}
+                  className="p-3.5 rounded-2xl bg-neutral-950 border border-neutral-800 hover:border-amber-500/50 cursor-pointer flex items-center justify-between transition group"
+                >
+                  <div>
+                    <h4 className="text-sm font-bold text-white group-hover:text-amber-400 transition">
+                      {evt.title}
+                    </h4>
+                    <p className="text-xs text-neutral-400">
+                      Couple: <strong className="text-neutral-300">{evt.coupleName}</strong> • {evt.photosCount || evt.photos?.length || 0} photos
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold text-amber-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                    Upload Photos →
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={() => navigateTo('dashboard')}
+            className="px-5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-semibold transition"
+          >
+            ← Return to Dashboard
+          </button>
+        </div>
       </div>
     );
   }
@@ -498,7 +546,7 @@ export const PhotoUploadPage: React.FC = () => {
               {activeEvent.pointTier === 'premium' ? '⚡ Premium (5,000 Cap)' : 'Standard (2,500 Cap)'}
             </span>
             <span className="text-xs text-neutral-400 font-mono">
-              {eventPhotos.length} / {MAX_EVENT_CAPACITY} Photos
+              {displayPhotosCount} / {MAX_EVENT_CAPACITY} Photos
             </span>
           </div>
 
@@ -592,7 +640,7 @@ export const PhotoUploadPage: React.FC = () => {
                   <span className="text-xs truncate">All Folders</span>
                 </div>
                 <span className="text-[10px] bg-neutral-950 px-2 py-0.5 rounded-full font-mono text-neutral-400">
-                  {eventPhotos.length}
+                  {displayPhotosCount}
                 </span>
               </div>
 
@@ -942,12 +990,22 @@ export const PhotoUploadPage: React.FC = () => {
                       Folders & Photos
                     </h2>
                     <span className="text-xs px-2 py-0.5 bg-neutral-800 text-neutral-300 rounded-full font-mono">
-                      {eventPhotos.length} Total Photos • {effectiveFolders.length} Folders
+                      {displayPhotosCount} Total Photos • {effectiveFolders.length} Folders
                     </span>
                   </div>
                 </div>
 
-                {effectiveFolders.length === 0 ? (
+                {isPhotosLoading ? (
+                  <div className="text-center py-12 bg-neutral-900/40 border border-amber-500/30 rounded-3xl animate-pulse">
+                    <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-xs font-semibold text-amber-300">
+                      Cloud se photos sync ho rahi hain ({displayPhotosCount} photos)...
+                    </p>
+                    <p className="text-[11px] text-neutral-400 mt-1">
+                      Kripya thoda sa intezar karein, photos load hote hi folders yahan appear honge.
+                    </p>
+                  </div>
+                ) : effectiveFolders.length === 0 ? (
                   <div className="text-center py-12 bg-neutral-900/40 border border-neutral-800 rounded-3xl">
                     <FolderOpen className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
                     <p className="text-xs text-neutral-400">Abhi tak koi photo folder upload nahi hua hai.</p>
