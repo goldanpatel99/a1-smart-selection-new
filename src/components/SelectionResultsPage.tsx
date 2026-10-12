@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   ArrowLeft,
@@ -66,7 +66,7 @@ export const SelectionResultsPage: React.FC = () => {
   const pctSelected = totalPhotos > 0 ? Math.round((selectedPhotos.length / totalPhotos) * 100) : 0;
 
   // Folder breakdown
-  const folderStats = effectiveFolders.map((folder) => {
+  const folderStats = effectiveFolders.map((folder: { id: string; name: string }) => {
     const total = allPhotos.filter(
       (p) =>
         p.folderId === folder.id ||
@@ -538,7 +538,7 @@ export const SelectionResultsPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-800/60 font-mono text-neutral-300">
-              {folderStats.map((f) => (
+              {folderStats.map((f: any) => (
                 <tr key={f.id} className="hover:bg-neutral-800/30">
                   <td className="py-3 font-sans font-semibold text-white">{f.name}</td>
                   <td className="py-3 text-center text-neutral-400">{f.total} photos</td>

@@ -569,6 +569,21 @@ export const ClientGallery: React.FC = () => {
           </div>
         </div>
 
+        {/* Live Cloud Photos Streaming Indicator */}
+        {allPhotos.length > 0 && (activeEvent.photosCount || 0) > allPhotos.length && (
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 my-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-300 animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 animate-spin text-amber-400" />
+              <span>
+                Loading remaining photos from Cloud: <strong className="font-mono text-white">{allPhotos.length}</strong> of <strong className="font-mono text-white">{activeEvent.photosCount}</strong> loaded so far...
+              </span>
+            </div>
+            <span className="text-[10px] bg-neutral-900 border border-neutral-800 px-2 py-0.5 rounded font-mono text-amber-400">
+              Live Cloud Sync
+            </span>
+          </div>
+        )}
+
         {/* Photo Gallery Grid */}
         {filteredPhotos.length === 0 ? (
           allPhotos.length === 0 && (activeEvent.photosCount || 0) > 0 ? (

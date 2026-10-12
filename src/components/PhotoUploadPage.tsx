@@ -223,8 +223,12 @@ export const PhotoUploadPage: React.FC = () => {
     setShowConfirmationGallery(true);
     const startTime = Date.now();
 
-    // High Concurrency (8 parallel workers with hardware-accelerated decode)
-    const CONCURRENCY = 8;
+    // Turbo Concurrency: Dynamically adapt to system CPU threads (up to 12-16 parallel workers for highest speed)
+    const cores =
+      typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+        ? navigator.hardwareConcurrency
+        : 6;
+    const CONCURRENCY = Math.min(16, Math.max(8, cores * 2));
     let totalProcessedSoFar = 0;
 
     for (let i = 0; i < items.length; i += CONCURRENCY) {
@@ -285,9 +289,9 @@ export const PhotoUploadPage: React.FC = () => {
         setConfirmedUploads((prev) => [...newConfirmationCards, ...prev]);
 
         // 2. Incremental batch sync into active event state!
-        // This makes photos and folders appear on the website in real time without waiting for full completion!
+        // This makes photos and folders appear on the website and sync to cloud in real time!
         if (activeEvent) {
-          addPhotosToEvent(activeEvent.id, validPhotos);
+          await addPhotosToEvent(activeEvent.id, validPhotos);
         }
       }
 
