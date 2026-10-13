@@ -32,6 +32,7 @@ import {
   Globe,
   ExternalLink,
   Zap,
+  Download,
 } from 'lucide-react';
 import { User, AdminSettings, PointTier } from '../types';
 import { getBaseAppUrl, CUSTOM_DOMAIN } from '../utils/domainConfig';
@@ -82,6 +83,7 @@ export const AdminPanel: React.FC = () => {
   const adminUser = users.find((u) => u.role === 'admin');
   const [showAdminCredsModal, setShowAdminCredsModal] = useState(false);
   const [showDomainModal, setShowDomainModal] = useState(false);
+  const [showDeployModal, setShowDeployModal] = useState(false);
   const [copiedDns, setCopiedDns] = useState<string | null>(null);
   const [adminEmailInput, setAdminEmailInput] = useState(adminUser?.email || 'admin@a1smartselection.com');
   const [adminPassInput, setAdminPassInput] = useState(adminUser?.password || 'admin');
@@ -253,6 +255,15 @@ export const AdminPanel: React.FC = () => {
           >
             <Globe className="w-3.5 h-3.5 text-emerald-400" />
             <span>Domain: a1smartselection.sbs</span>
+          </button>
+
+          <button
+            onClick={() => setShowDeployModal(true)}
+            className="px-3.5 py-2 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            title="Download Netlify Ready ZIP or Full Source Code"
+          >
+            <Download className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Netlify / Web ZIP</span>
           </button>
 
           <button
@@ -1613,6 +1624,152 @@ export const AdminPanel: React.FC = () => {
                 className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-semibold"
               >
                 Done / Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Netlify & Web Deployment ZIP Download Modal */}
+      {showDeployModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-4 pb-4 border-b border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center flex-shrink-0">
+                  <Download className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <span>Download Project ZIP for Netlify</span>
+                    <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                      Ready to Deploy
+                    </span>
+                  </h3>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    Netlify Drop, Hostinger, ya cPanel par deploy karne ke liye zip download karein.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeployModal(false)}
+                className="text-neutral-500 hover:text-white p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {/* Option 1: Netlify Drop 1-Click ZIP (Pre-built production dist) */}
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-neutral-950 via-neutral-900 to-cyan-950/20 border border-cyan-500/40 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-cyan-400" />
+                    Option 1: Netlify Deploy ZIP (Production Ready dist)
+                  </span>
+                  <span className="text-[10px] font-bold text-cyan-300 bg-cyan-500/20 border border-cyan-500/30 px-2.5 py-0.5 rounded-full">
+                    Recommended for Netlify
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-300 mt-2 leading-relaxed">
+                  Isme pre-compiled production build files hain jisme <strong className="text-white">_redirects</strong> aur <strong className="text-white">netlify.toml</strong> pehle se set hain taaki Netlify par refresh karne par 404 error na aaye.
+                </p>
+
+                <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  <a
+                    href="/download-netlify-build"
+                    download="a1smartselection-netlify-deploy.zip"
+                    className="flex-1 py-3 px-4 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-neutral-950 font-bold text-xs rounded-xl shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.02]"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download Netlify Deploy ZIP (~365 KB)</span>
+                  </a>
+
+                  <a
+                    href="https://app.netlify.com/drop"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-3 px-4 bg-neutral-800 hover:bg-neutral-700 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors border border-neutral-700"
+                  >
+                    <span>Open Netlify Drop</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-neutral-400" />
+                  </a>
+                </div>
+
+                {/* Netlify 3-Step Guide */}
+                <div className="mt-4 p-3.5 rounded-xl bg-neutral-950/90 border border-neutral-800 text-[11px] text-neutral-300 space-y-1.5">
+                  <div className="font-bold text-cyan-300 flex items-center gap-1.5 mb-1">
+                    <span>⚡ Netlify par 10 Second me Upload Karne ka Tareeqa:</span>
+                  </div>
+                  <div>1. Upar <strong>"Download Netlify Deploy ZIP"</strong> button dabakar file download karein.</div>
+                  <div>2. Naye tab me <strong>app.netlify.com/drop</strong> kholein (free account login karein).</div>
+                  <div>3. Download hui <strong>a1smartselection-netlify-deploy.zip</strong> file ko drag &amp; drop karein.</div>
+                  <div className="text-emerald-400 font-semibold pt-1">
+                    ✓ Done! Aapki website turant live ho jayegi free HTTPS/SSL ke saath!
+                  </div>
+                </div>
+              </div>
+
+              {/* Option 2: Full Source Code ZIP */}
+              <div className="p-4 rounded-xl bg-neutral-950 border border-neutral-800">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                    <Cloud className="w-3.5 h-3.5" />
+                    Option 2: Complete Source Code ZIP
+                  </span>
+                  <span className="text-[10px] text-neutral-400 bg-neutral-900 px-2 py-0.5 rounded">
+                    GitHub / Developers
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-300 mt-1.5 leading-relaxed">
+                  Agar aap GitHub repository me code push karna chahte hain ya local computer me VS Code me open karna chahte hain:
+                </p>
+
+                <div className="mt-3 flex items-center gap-3">
+                  <a
+                    href="/download-source-zip"
+                    download="a1smartselection-full-source.zip"
+                    className="py-2.5 px-4 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-2 transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download Full Source Code ZIP (~175 KB)</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Direct URLs info */}
+              <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-850 text-xs">
+                <span className="text-[11px] text-neutral-400 font-semibold block mb-1">
+                  Direct Browser Download Links:
+                </span>
+                <div className="font-mono text-[11px] text-neutral-300 space-y-1">
+                  <div className="truncate flex items-center justify-between gap-2 p-1.5 rounded bg-neutral-900">
+                    <span className="truncate">{window.location.origin}/download-netlify-build</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/download-netlify-build`);
+                        showToast('Link copied to clipboard!', 'success');
+                      }}
+                      className="px-2 py-0.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[10px] rounded"
+                    >
+                      Copy Link
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-neutral-800 flex items-center justify-between">
+              <span className="text-[11px] text-neutral-500">
+                100% Client-Side + Firebase Live Sync Ready.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowDeployModal(false)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-semibold"
+              >
+                Close
               </button>
             </div>
           </div>

@@ -13,6 +13,7 @@ import {
   Sliders,
   Store,
   MessageCircle,
+  Download,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -181,6 +182,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                           Master Admin Panel
                         </button>
                       )}
+
+                      <a
+                        href="/download-netlify-build"
+                        download="a1smartselection-netlify-deploy.zip"
+                        onClick={() => setShowUserDropdown(false)}
+                        className="w-full text-left px-3 py-2 text-xs text-cyan-300 hover:text-cyan-200 hover:bg-cyan-500/10 rounded-lg flex items-center gap-2 font-medium"
+                      >
+                        <Download className="w-4 h-4 text-cyan-400" />
+                        Download Netlify ZIP
+                      </a>
                     </div>
 
                     <div className="border-t border-neutral-800 pt-1">

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   ArrowLeft,
@@ -29,6 +29,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { compressAndWatermarkImage } from '../utils/imageCompressor';
+import { PhotoFolder } from '../types';
 
 // Structure for live upload confirmation card
 export interface UploadConfirmationItem {
@@ -59,7 +60,10 @@ async function scanDirectoryEntry(
   entry: any,
   inheritedFolderName = ''
 ): Promise<{ file: File; folderName: string }[]> {
-  const currentFolderName = inheritedFolderName || entry.name;
+  let currentFolderName = inheritedFolderName || entry.name || '';
+  if (/^all(\s+folders|\s+photos)?$/i.test(currentFolderName.trim())) {
+    currentFolderName = '';
+  }
   const reader = entry.createReader();
   const entries = await readAllEntriesFromReader(reader);
   const results: { file: File; folderName: string }[] = [];
@@ -72,14 +76,21 @@ async function scanDirectoryEntry(
           file.type.startsWith('image/') ||
           /\.(jpe?g|png|webp|arw|cr2|nef|dng|heic)$/i.test(file.name)
         ) {
-          results.push({ file, folderName: currentFolderName });
+          results.push({ file, folderName: currentFolderName || 'Photos' });
         }
       } catch (err) {
         console.warn('Could not read file entry', err);
       }
     } else if (item.isDirectory) {
-      // For subdirectories, use the subfolder's own name (e.g. Wedding -> Haldi -> Reception)
-      const subFolderName = item.name;
+      // If parent is a generic container like 'Wedding', use the subfolder's ceremony name
+      // Otherwise if parent is already a ceremony folder like 'Haldi', keep 'Haldi'
+      let subFolderName = item.name;
+      if (
+        currentFolderName &&
+        !/^(wedding|event|photos|gallery|all|all\s+folders)$/i.test(currentFolderName)
+      ) {
+        subFolderName = currentFolderName;
+      }
       const subResults = await scanDirectoryEntry(item, subFolderName);
       results.push(...subResults);
     }
@@ -92,6 +103,7 @@ export const PhotoUploadPage: React.FC = () => {
   const {
     events,
     activeEvent,
+    activeEventId,
     currentUser,
     navigateTo,
     addFolder,
@@ -100,6 +112,7 @@ export const PhotoUploadPage: React.FC = () => {
     addPhotosToEvent,
     deletePhotoFromEvent,
     showToast,
+    refreshEventPhotos,
   } = useApp();
 
   // Hidden inputs for folders & loose photos
@@ -132,6 +145,10 @@ export const PhotoUploadPage: React.FC = () => {
   const [showConfirmationGallery, setShowConfirmationGallery] = useState(false);
   const [confirmationFilterFolder, setConfirmationFilterFolder] = useState<string>('all');
 
+  // Dedicated Folder Deletion Modal state (eliminates unreliable window.confirm in iframes)
+  const [folderToDelete, setFolderToDelete] = useState<PhotoFolder | null>(null);
+  const [isDeletingFolder, setIsDeletingFolder] = useState(false);
+
   const eventFolders = activeEvent?.folders || [];
   const eventPhotos = activeEvent?.photos || [];
   const displayPhotosCount = Math.max(eventPhotos.length, activeEvent?.photosCount || 0);
@@ -141,12 +158,19 @@ export const PhotoUploadPage: React.FC = () => {
   const MAX_EVENT_CAPACITY =
     activeEvent?.maxPhotoCapacity || (activeEvent?.pointTier === 'premium' ? 5000 : 2500);
 
-  // Auto-synthesize folders if eventFolders array is empty but photos have folderName
+  // Clean folders: never include any dummy "All Folders" or "all"
   const effectiveFolders = useMemo(() => {
-    if (eventFolders.length > 0) return eventFolders;
+    const cleanEventFolders = (eventFolders || []).filter(
+      (f) => !/^all(\s+folders|\s+photos)?$/i.test(f.name.trim())
+    );
+    if (cleanEventFolders.length > 0) return cleanEventFolders;
     if (eventPhotos.length === 0) return [];
-    const folderNames = Array.from(new Set(eventPhotos.map((p) => (p.folderName || 'Photos').trim())));
-    return folderNames.map((name, idx) => ({
+    const rawFolderNames = Array.from(new Set(eventPhotos.map((p) => (p.folderName || '').trim())));
+    const validNames = rawFolderNames.filter(
+      (name) => name && !/^all(\s+folders|\s+photos)?$/i.test(name)
+    );
+    if (validNames.length === 0) return [];
+    return validNames.map((name, idx) => ({
       id: `fld-auto-${idx}-${name.toLowerCase().replace(/\s+/g, '-')}`,
       name,
       visible: true,
@@ -154,7 +178,7 @@ export const PhotoUploadPage: React.FC = () => {
     }));
   }, [eventFolders, eventPhotos]);
 
-  // Grouped photos by folder for the "All Folders" separated view
+  // Grouped photos by folder for separated view
   const photosByFolder = useMemo(() => {
     const map = new Map<string, typeof eventPhotos>();
     effectiveFolders.forEach((f) => map.set(f.id, []));
@@ -183,6 +207,16 @@ export const PhotoUploadPage: React.FC = () => {
     return map;
   }, [effectiveFolders, eventPhotos]);
 
+  // Auto-select folder when available so user is directly inside their folder
+  useEffect(() => {
+    if (effectiveFolders.length > 0) {
+      const exists = effectiveFolders.some((f) => f.id === selectedFolderId);
+      if (!exists && selectedFolderId !== 'all') {
+        setSelectedFolderId(effectiveFolders[0].id);
+      }
+    }
+  }, [effectiveFolders, selectedFolderId]);
+
   // Current folder when a single folder is selected
   const currentSingleFolder =
     selectedFolderId !== 'all'
@@ -192,7 +226,7 @@ export const PhotoUploadPage: React.FC = () => {
   const currentFolderPhotos =
     selectedFolderId === 'all'
       ? eventPhotos
-      : eventPhotos.filter((p) => p.folderId === selectedFolderId);
+      : eventPhotos.filter((p) => p.folderId === selectedFolderId || (currentSingleFolder && (p.folderName || '').toLowerCase().trim() === currentSingleFolder.name.toLowerCase().trim()));
 
   const handleCreateFolder = (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,7 +236,7 @@ export const PhotoUploadPage: React.FC = () => {
     setShowAddFolderInput(false);
   };
 
-  // High-Speed Concurrent Processor
+  // High-Speed Concurrent Processor with per-file live progress & guaranteed completion
   const processFolderUpload = async (items: { file: File; folderName: string }[]) => {
     if (items.length === 0) {
       showToast('No valid photo files detected for upload.', 'error');
@@ -223,95 +257,147 @@ export const PhotoUploadPage: React.FC = () => {
     setShowConfirmationGallery(true);
     const startTime = Date.now();
 
-    // Turbo Concurrency: Dynamically adapt to system CPU threads (up to 12-16 parallel workers for highest speed)
-    const cores =
-      typeof navigator !== 'undefined' && navigator.hardwareConcurrency
-        ? navigator.hardwareConcurrency
-        : 6;
-    const CONCURRENCY = Math.min(16, Math.max(8, cores * 2));
+    // Clean primary folder name: never allow "all" or "all folders"
+    let primaryFolder = (items[0]?.folderName || '').trim();
+    if (!primaryFolder || /^all(\s+folders|\s+photos)?$/i.test(primaryFolder)) {
+      primaryFolder = effectiveFolders.length > 0 ? effectiveFolders[0].name : 'Photos';
+    }
+
+    setProcessingStatus({
+      current: 0,
+      total: items.length,
+      folder: primaryFolder,
+      speedFps: 0,
+    });
+
+    const CONCURRENCY = 6;
     let totalProcessedSoFar = 0;
+    const targetEventId = activeEvent?.id || activeEventId;
 
-    for (let i = 0; i < items.length; i += CONCURRENCY) {
-      const chunk = items.slice(i, i + CONCURRENCY);
+    try {
+      for (let i = 0; i < items.length; i += CONCURRENCY) {
+        const chunk = items.slice(i, i + CONCURRENCY);
 
-      const results = await Promise.all(
-        chunk.map(async ({ file, folderName }) => {
-          try {
-            const compressed = await compressAndWatermarkImage(file, {
-              maxWidth: 1100,
-              maxHeight: 900,
-              quality: 0.65, // Optimal hard compression for instant web gallery & low disk usage
-              watermarkText: applyWatermark
-                ? currentUser?.watermarkText || currentUser?.studioName?.toUpperCase() || 'PREVIEW'
-                : '',
-              watermarkPosition: currentUser?.watermarkPosition || 'bottom-right',
-              watermarkOpacity: currentUser?.watermarkOpacity || 0.35,
-            });
+        const results = await Promise.all(
+          chunk.map(async ({ file, folderName }) => {
+            let cleanFolder = (folderName || '').trim();
+            if (!cleanFolder || /^all(\s+folders|\s+photos)?$/i.test(cleanFolder)) {
+              cleanFolder = primaryFolder;
+            }
 
-            return {
-              filename: file.name,
-              originalName: file.name,
-              folderId: '',
-              folderName: folderName || 'Photos',
-              url: compressed.dataUrl,
-              thumbnailUrl: compressed.thumbnailUrl || compressed.dataUrl,
-              sizeBytes: compressed.sizeBytes,
-            };
-          } catch (err) {
-            console.error('Failed to compress file', file.name, err);
-            return null;
+            try {
+              const compressed = await compressAndWatermarkImage(file, {
+                maxWidth: 1100,
+                maxHeight: 900,
+                quality: 0.65,
+                watermarkText: applyWatermark
+                  ? currentUser?.watermarkText || currentUser?.studioName?.toUpperCase() || 'PREVIEW'
+                  : '',
+                watermarkPosition: currentUser?.watermarkPosition || 'bottom-right',
+                watermarkOpacity: currentUser?.watermarkOpacity || 0.35,
+              });
+
+              totalProcessedSoFar++;
+              const elapsedSec = Math.max(0.1, (Date.now() - startTime) / 1000);
+              const speedFps = Math.round((totalProcessedSoFar / elapsedSec) * 10) / 10;
+
+              // Live per-photo update for accurate real-time reading
+              setProcessingStatus({
+                current: Math.min(items.length, totalProcessedSoFar),
+                total: items.length,
+                folder: cleanFolder,
+                speedFps,
+              });
+
+              return {
+                filename: file.name,
+                originalName: file.name,
+                folderId: '',
+                folderName: cleanFolder,
+                url: compressed.dataUrl,
+                thumbnailUrl: compressed.thumbnailUrl || compressed.dataUrl,
+                sizeBytes: compressed.sizeBytes,
+              };
+            } catch (err) {
+              console.error('Failed to compress file', file.name, err);
+              totalProcessedSoFar++;
+              return null;
+            }
+          })
+        );
+
+        const validPhotos = results.filter(Boolean) as Array<{
+          filename: string;
+          originalName: string;
+          folderId: string;
+          folderName: string;
+          url: string;
+          thumbnailUrl: string;
+          sizeBytes: number;
+        }>;
+
+        if (validPhotos.length > 0) {
+          // 1. Immediately append to live confirmation gallery
+          const newConfirmationCards: UploadConfirmationItem[] = validPhotos.map((p, idx) => ({
+            id: `up-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+            filename: p.filename,
+            folderName: p.folderName,
+            thumbnailUrl: p.thumbnailUrl,
+            url: p.url,
+            sizeBytes: p.sizeBytes,
+            uploadedAt: new Date().toLocaleTimeString(),
+          }));
+
+          setConfirmedUploads((prev) => [...newConfirmationCards, ...prev]);
+
+          // 2. Incremental batch sync into active event state
+          if (targetEventId) {
+            try {
+              await addPhotosToEvent(targetEventId, validPhotos);
+            } catch (batchErr) {
+              console.error('Error saving batch to event:', batchErr);
+            }
           }
-        })
-      );
-
-      const validPhotos = results.filter(Boolean) as Array<{
-        filename: string;
-        originalName: string;
-        folderId: string;
-        folderName: string;
-        url: string;
-        thumbnailUrl: string;
-        sizeBytes: number;
-      }>;
-
-      if (validPhotos.length > 0) {
-        // 1. Immediately append to live confirmation gallery so user sees photos popping in live!
-        const newConfirmationCards: UploadConfirmationItem[] = validPhotos.map((p, idx) => ({
-          id: `up-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-          filename: p.filename,
-          folderName: p.folderName,
-          thumbnailUrl: p.thumbnailUrl,
-          url: p.url,
-          sizeBytes: p.sizeBytes,
-          uploadedAt: new Date().toLocaleTimeString(),
-        }));
-
-        setConfirmedUploads((prev) => [...newConfirmationCards, ...prev]);
-
-        // 2. Incremental batch sync into active event state!
-        // This makes photos and folders appear on the website and sync to cloud in real time!
-        if (activeEvent) {
-          await addPhotosToEvent(activeEvent.id, validPhotos);
         }
       }
 
-      totalProcessedSoFar += chunk.length;
-      const elapsedSec = Math.max(0.2, (Date.now() - startTime) / 1000);
-      const speedFps = Math.round((totalProcessedSoFar / elapsedSec) * 10) / 10;
+      // 100% complete state
+      setProcessingStatus((prev) => ({
+        ...prev,
+        current: items.length,
+        speedFps: 0,
+      }));
 
-      setProcessingStatus({
-        current: Math.min(items.length, totalProcessedSoFar),
-        total: items.length,
-        folder: chunk[0]?.folderName || 'Photos',
-        speedFps,
-      });
+      // Auto-switch to the uploaded folder
+      setTimeout(() => {
+        const found = effectiveFolders.find(
+          (f) => f.name.toLowerCase().trim() === primaryFolder.toLowerCase().trim()
+        );
+        if (found) {
+          setSelectedFolderId(found.id);
+        }
+      }, 200);
+
+      showToast(
+        `🎉 Sabhi ${items.length} photos successfully upload ho chuke hain!`,
+        'success'
+      );
+    } catch (err) {
+      console.error('Upload process error:', err);
+      showToast('Upload me koi dikkat aayi, kripya dobara try karein.', 'error');
+    } finally {
+      // Guaranteed: ALWAYS close the uploading overlay cleanly after short delay
+      setTimeout(() => {
+        setIsProcessing(false);
+      }, 600);
+
+      // Background cloud sync without blocking UI
+      if (targetEventId) {
+        refreshEventPhotos(targetEventId).catch((e) => {
+          console.warn('Background sync error after upload', e);
+        });
+      }
     }
-
-    setIsProcessing(false);
-    showToast(
-      `🎉 Sabhi ${items.length} photos successfully upload ho chuke hain! Separate folders website pe ban gaye.`,
-      'success'
-    );
   };
 
   // Handler for directory / multi-folder file input
@@ -336,13 +422,23 @@ export const PhotoUploadPage: React.FC = () => {
 
       let detectedFolderName = 'Photos';
       if (pathParts.length >= 3) {
-        // Multi-level: E.g. "Root/Haldi/file.jpg" -> pick "Haldi"
-        detectedFolderName = pathParts[pathParts.length - 2];
+        const first = pathParts[0];
+        const second = pathParts[1];
+        if (/^(wedding|event|photos|gallery|all|all\s+folders)$/i.test(first.trim())) {
+          detectedFolderName = second;
+        } else {
+          detectedFolderName = first;
+        }
       } else if (pathParts.length === 2) {
         // Single folder: E.g. "Haldi/file.jpg" -> pick "Haldi"
         detectedFolderName = pathParts[0];
       } else if (currentSingleFolder) {
         detectedFolderName = currentSingleFolder.name;
+      }
+
+      // Prevent dummy "all" or "all folders"
+      if (!detectedFolderName || /^all(\s+folders|\s+photos)?$/i.test(detectedFolderName.trim())) {
+        detectedFolderName = currentSingleFolder ? currentSingleFolder.name : (effectiveFolders.length > 0 ? effectiveFolders[0].name : 'Photos');
       }
 
       items.push({
@@ -368,7 +464,7 @@ export const PhotoUploadPage: React.FC = () => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const targetFolder = currentSingleFolder?.name || 'Photos';
+    const targetFolder = currentSingleFolder?.name || (effectiveFolders.length > 0 ? effectiveFolders[0].name : 'Photos');
     const items: { file: File; folderName: string }[] = [];
 
     for (let i = 0; i < files.length; i++) {
@@ -628,29 +724,14 @@ export const PhotoUploadPage: React.FC = () => {
               </form>
             )}
 
-            {/* Folder List with "All Folders" Option */}
+            {/* Individual Folders List (Strictly actual ceremony folders) */}
             <div className="space-y-1.5">
-              {/* Option: View All Folders */}
-              <div
-                onClick={() => setSelectedFolderId('all')}
-                className={`px-3 py-2.5 rounded-xl cursor-pointer flex items-center justify-between transition-all ${
-                  selectedFolderId === 'all'
-                    ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold shadow-sm'
-                    : 'hover:bg-neutral-800 text-neutral-300'
-                }`}
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <FolderCheck className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                  <span className="text-xs truncate">All Folders</span>
-                </div>
-                <span className="text-[10px] bg-neutral-950 px-2 py-0.5 rounded-full font-mono text-neutral-400">
-                  {displayPhotosCount}
-                </span>
-              </div>
-
-              {/* Individual Folders List */}
-              {eventFolders.map((folder) => {
-                const folderPhotosCount = eventPhotos.filter((p) => p.folderId === folder.id).length;
+              {effectiveFolders.map((folder) => {
+                const folderPhotosCount = eventPhotos.filter(
+                  (p) =>
+                    p.folderId === folder.id ||
+                    (p.folderName || '').toLowerCase().trim() === folder.name.toLowerCase().trim()
+                ).length;
                 const isSelected = selectedFolderId === folder.id;
 
                 return (
@@ -659,13 +740,13 @@ export const PhotoUploadPage: React.FC = () => {
                     onClick={() => setSelectedFolderId(folder.id)}
                     className={`group px-3 py-2 rounded-xl cursor-pointer flex items-center justify-between transition-all ${
                       isSelected
-                        ? 'bg-amber-500/15 border border-amber-500/30 text-amber-300 font-semibold'
+                        ? 'bg-amber-500/15 border border-amber-500/30 text-amber-300 font-semibold shadow-sm'
                         : 'hover:bg-neutral-800 text-neutral-300'
                     }`}
                   >
                     <div className="flex items-center gap-2 truncate">
                       <FolderOpen className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                      <span className="text-xs truncate">{folder.name}</span>
+                      <span className="text-xs truncate font-medium">{folder.name}</span>
                     </div>
 
                     <div className="flex items-center gap-1.5">
@@ -691,15 +772,10 @@ export const PhotoUploadPage: React.FC = () => {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (confirm(`Delete folder "${folder.name}" and its ${folderPhotosCount} photos?`)) {
-                            deleteFolder(activeEvent.id, folder.id);
-                            if (selectedFolderId === folder.id) {
-                              setSelectedFolderId('all');
-                            }
-                          }
+                          setFolderToDelete(folder);
                         }}
-                        className="text-neutral-500 hover:text-rose-400 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Delete folder"
+                        className="text-neutral-500 hover:text-rose-400 p-0.5 opacity-70 group-hover:opacity-100 transition-opacity"
+                        title="Delete folder permanently"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -827,19 +903,25 @@ export const PhotoUploadPage: React.FC = () => {
             {isProcessing && (
               <div className="absolute inset-0 bg-neutral-950/95 backdrop-blur-md rounded-3xl flex flex-col items-center justify-center p-6 z-30 animate-in fade-in">
                 <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-3 shadow-lg">
-                  <div className="w-6 h-6 border-3 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                  {processingStatus.current >= processingStatus.total && processingStatus.total > 0 ? (
+                    <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                  ) : (
+                    <div className="w-6 h-6 border-3 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                  )}
                 </div>
 
                 <div className="text-base font-extrabold text-white font-heading mb-1 text-center">
-                  Uploading to Folder: "{processingStatus.folder}"
+                  {processingStatus.current >= processingStatus.total && processingStatus.total > 0
+                    ? `✓ Sabhi Photos Upload Ho Gaye!`
+                    : `Uploading to Folder: "${processingStatus.folder}"`}
                 </div>
 
                 <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
                   <span className="text-[10px] bg-amber-500/20 text-amber-300 font-mono font-bold px-2.5 py-0.5 rounded border border-amber-500/30">
-                    ⚡ 8x Concurrent Acceleration
+                    ⚡ High-Speed Multi-Threaded Sync
                   </span>
                   <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold px-2.5 py-0.5 rounded border border-emerald-500/30">
-                    ✓ Live Thumbnail Confirmation Active
+                    ✓ 100% Cloud Persistence
                   </span>
                   {processingStatus.speedFps > 0 && (
                     <span className="text-[10px] bg-neutral-800 text-neutral-300 font-mono px-2 py-0.5 rounded">
@@ -851,25 +933,39 @@ export const PhotoUploadPage: React.FC = () => {
                 <div className="text-xs font-mono text-neutral-300 mb-2">
                   Processed <strong className="text-white">{processingStatus.current}</strong> of{' '}
                   <strong className="text-white">{processingStatus.total}</strong> photos (
-                  {Math.round(((processingStatus.current || 0) / (processingStatus.total || 1)) * 100)}%)
+                  {Math.min(100, Math.round(((processingStatus.current || 0) / (processingStatus.total || 1)) * 100))}%)
                 </div>
 
                 {/* Progress bar */}
                 <div className="w-full max-w-md h-3 bg-neutral-900 rounded-full border border-neutral-800 overflow-hidden shadow-inner mb-4">
                   <div
-                    className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-400 transition-all duration-150 rounded-full"
+                    className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-400 transition-all duration-200 rounded-full"
                     style={{
-                      width: `${Math.max(
-                        3,
-                        ((processingStatus.current || 0) / (processingStatus.total || 1)) * 100
+                      width: `${Math.min(
+                        100,
+                        Math.max(
+                          3,
+                          ((processingStatus.current || 0) / (processingStatus.total || 1)) * 100
+                        )
                       )}%`,
                     }}
                   />
                 </div>
 
-                <p className="text-[11px] text-neutral-400 animate-pulse">
-                  Uploading photos with small thumbnails in real-time below...
-                </p>
+                <div className="flex items-center gap-3">
+                  <p className="text-[11px] text-neutral-400">
+                    {processingStatus.current >= processingStatus.total && processingStatus.total > 0
+                      ? 'Closing overlay and updating folders...'
+                      : 'Compressing and saving photos to Cloud Firestore...'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsProcessing(false)}
+                    className="text-[10px] text-neutral-400 hover:text-white px-2 py-1 rounded bg-neutral-900 border border-neutral-800 hover:border-neutral-700"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1086,11 +1182,10 @@ export const PhotoUploadPage: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      if (confirm(`Delete "${photo.filename}"?`)) {
-                                        deletePhotoFromEvent(activeEvent.id, photo.id);
-                                      }
+                                      deletePhotoFromEvent(activeEvent.id, photo.id);
+                                      showToast(`Photo "${photo.filename}" deleted`, 'info');
                                     }}
-                                    className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-neutral-400 hover:text-rose-400 hover:bg-black/90 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-neutral-400 hover:text-rose-400 hover:bg-black/90 opacity-60 group-hover:opacity-100 transition-opacity"
                                     title="Delete photo"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -1166,11 +1261,10 @@ export const PhotoUploadPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => {
-                            if (confirm(`Delete "${photo.filename}"?`)) {
-                              deletePhotoFromEvent(activeEvent.id, photo.id);
-                            }
+                            deletePhotoFromEvent(activeEvent.id, photo.id);
+                            showToast(`Photo "${photo.filename}" deleted`, 'info');
                           }}
-                          className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-neutral-400 hover:text-rose-400 hover:bg-black/90 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-neutral-400 hover:text-rose-400 hover:bg-black/90 opacity-60 group-hover:opacity-100 transition-opacity"
                           title="Delete photo"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1231,6 +1325,68 @@ export const PhotoUploadPage: React.FC = () => {
             >
               Okay, I Understand
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated Folder Deletion Modal (Permanent deletion without broken window.confirm) */}
+      {folderToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Delete Folder Permanently?</h3>
+                <p className="text-xs text-neutral-400">"{folderToDelete.name}" folder aur uske sabhi photos</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-neutral-300 leading-relaxed bg-neutral-950 p-3.5 rounded-2xl border border-neutral-800">
+              Kya aap sach me folder <strong className="text-white">"{folderToDelete.name}"</strong> aur uske andar ke sabhi photos permanently delete karna chahte hain? Ye photos gallery aur cloud storage se permanently remove ho jayenge.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingFolder}
+                onClick={() => setFolderToDelete(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingFolder}
+                onClick={async () => {
+                  setIsDeletingFolder(true);
+                  try {
+                    await deleteFolder(activeEvent.id, folderToDelete.id, folderToDelete.name);
+                    const remaining = effectiveFolders.filter(
+                      (f) => f.id !== folderToDelete.id && f.name !== folderToDelete.name
+                    );
+                    setSelectedFolderId(remaining.length > 0 ? remaining[0].id : 'all');
+                    setFolderToDelete(null);
+                  } finally {
+                    setIsDeletingFolder(false);
+                  }
+                }}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 shadow-lg shadow-rose-600/30 transition flex items-center gap-1.5"
+              >
+                {isDeletingFolder ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Permanently</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

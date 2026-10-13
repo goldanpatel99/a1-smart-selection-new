@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   User,
   WeddingEvent,
@@ -89,10 +89,12 @@ interface AppContextType {
 
   // Folders & Photos
   addFolder: (eventId: string, folderName: string) => void;
-  deleteFolder: (eventId: string, folderId: string) => void;
+  deleteFolder: (eventId: string, folderId: string, folderName?: string) => Promise<void> | void;
   toggleFolderVisibility: (eventId: string, folderId: string) => void;
   addPhotosToEvent: (eventId: string, photos: Omit<Photo, 'id' | 'isSelected' | 'uploadedAt'>[]) => Promise<Photo[]>;
   deletePhotoFromEvent: (eventId: string, photoId: string) => void;
+  refreshEventPhotos: (eventId: string) => Promise<Photo[]>;
+  mergePhotosIntoEvent: (eventId: string, photos: Photo[]) => void;
 
   // Client Selection
   togglePhotoSelection: (eventId: string, photoId: string) => void;
@@ -193,11 +195,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
 
           // Strict folder sync: ONLY folders uploaded by photographer exist (NO default Highlights/Ceremony)
-          const finalFolders = (ce.folders && ce.folders.length > 0)
+          const finalFolders = (ce.folders !== undefined && Array.isArray(ce.folders))
             ? ce.folders
-            : (existing?.folders && existing.folders.length > 0)
-            ? existing.folders
-            : [];
+            : (existing?.folders || []);
 
           const bestPhotosCount = Math.max(
             ce.photosCount || 0,
@@ -245,108 +245,92 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
+  // Synchronous in-memory photo accumulator map to avoid stale closures during high-speed batch uploads
+  const eventPhotosCacheRef = useRef<Map<string, Map<string, Photo>>>(new Map());
+
+  // Robust photo merger that ensures no uploaded photos are dropped
+  const mergePhotosIntoEvent = useCallback((eventId: string, photosToMerge: Photo[]) => {
+    if (!eventId || !photosToMerge || photosToMerge.length === 0) return;
+
+    let cacheMap = eventPhotosCacheRef.current.get(eventId);
+    if (!cacheMap) {
+      cacheMap = new Map<string, Photo>();
+      eventPhotosCacheRef.current.set(eventId, cacheMap);
+    }
+
+    photosToMerge.forEach((p) => {
+      const existing = cacheMap!.get(p.id);
+      cacheMap!.set(p.id, {
+        ...p,
+        url: p.url || existing?.url || '',
+        thumbnailUrl: p.thumbnailUrl || existing?.thumbnailUrl || p.url || '',
+      });
+    });
+
+    const accumulatedPhotos = Array.from(cacheMap.values());
+
+    setEvents((prev) =>
+      prev.map((e) => {
+        if (e.id !== eventId) return e;
+
+        const photoMap = new Map<string, Photo>();
+        (e.photos || []).forEach((p) => photoMap.set(p.id, p));
+        accumulatedPhotos.forEach((p) => {
+          const localPhoto = photoMap.get(p.id);
+          photoMap.set(p.id, {
+            ...p,
+            url: localPhoto?.url || p.url,
+            thumbnailUrl: localPhoto?.thumbnailUrl || p.thumbnailUrl || p.url,
+          });
+        });
+
+        const mergedPhotos = Array.from(photoMap.values());
+        const selectedIds = mergedPhotos.filter((p) => p.isSelected).map((p) => p.id);
+        const bestPhotosCount = Math.max(e.photosCount || 0, mergedPhotos.length, photosToMerge.length);
+
+        return {
+          ...e,
+          photos: mergedPhotos,
+          photosCount: bestPhotosCount,
+          selectedCount: selectedIds.length,
+          selectedPhotoIds: selectedIds,
+          coverPhotoUrl: e.coverPhotoUrl || mergedPhotos[0]?.thumbnailUrl || mergedPhotos[0]?.url,
+        };
+      })
+    );
+  }, []);
+
+  const refreshEventPhotos = useCallback(async (eventId: string): Promise<Photo[]> => {
+    if (!eventId) return [];
+
+    // 1. Fetch from local IDB
+    const cached = await idbStorage.getEventPhotos(eventId);
+    if (cached && cached.length > 0) {
+      mergePhotosIntoEvent(eventId, cached);
+    }
+
+    // 2. Fetch from Cloud Firestore
+    const cloudPhotos = await firebaseService.fetchEventPhotos(eventId);
+    if (cloudPhotos && cloudPhotos.length > 0) {
+      mergePhotosIntoEvent(eventId, cloudPhotos);
+      idbStorage.saveEventPhotos(eventId, cloudPhotos);
+    }
+
+    const cacheMap = eventPhotosCacheRef.current.get(eventId);
+    return cacheMap ? Array.from(cacheMap.values()) : cloudPhotos || [];
+  }, [mergePhotosIntoEvent]);
+
   // Synchronize photos for active event from Cloud Firestore & IndexedDB in real time (cross-device sync!)
   useEffect(() => {
     if (!activeEventId) return;
 
-    // 1. First check local IndexedDB cache for immediate offline rendering
-    idbStorage.getEventPhotos(activeEventId).then((cached) => {
-      if (cached && cached.length > 0) {
-        setEvents((prev) =>
-          prev.map((e) => {
-            if (e.id !== activeEventId) return e;
-            const photoMap = new Map<string, Photo>();
-            // Keep existing photos
-            (e.photos || []).forEach((p) => photoMap.set(p.id, p));
-            // Merge cached photos from IndexedDB (prioritizing non-empty image urls)
-            cached.forEach((p) => {
-              const existing = photoMap.get(p.id);
-              photoMap.set(p.id, {
-                ...p,
-                url: p.url || existing?.url || '',
-                thumbnailUrl: p.thumbnailUrl || existing?.thumbnailUrl || p.url || '',
-              });
-            });
-            const merged = Array.from(photoMap.values());
-            const bestCount = Math.max(e.photosCount || 0, merged.length, cached.length);
-            return {
-              ...e,
-              photos: merged,
-              photosCount: bestCount,
-              coverPhotoUrl: e.coverPhotoUrl || merged[0]?.thumbnailUrl || merged[0]?.url,
-            };
-          })
-        );
-      }
-    });
+    // 1. Initial hydration from IndexedDB and Cloud Firestore
+    refreshEventPhotos(activeEventId);
 
-    // 2. Direct fetch from Cloud Firestore to guarantee all uploaded photos are fetched immediately
-    firebaseService.fetchEventPhotos(activeEventId).then((cloudPhotos) => {
-      if (cloudPhotos && cloudPhotos.length > 0) {
-        setEvents((prev) =>
-          prev.map((e) => {
-            if (e.id !== activeEventId) return e;
-            const photoMap = new Map<string, Photo>();
-            (e.photos || []).forEach((p) => photoMap.set(p.id, p));
-            cloudPhotos.forEach((cp) => {
-              const localPhoto = photoMap.get(cp.id);
-              photoMap.set(cp.id, {
-                ...cp,
-                url: localPhoto?.url || cp.url,
-                thumbnailUrl: localPhoto?.thumbnailUrl || cp.thumbnailUrl || cp.url,
-              });
-            });
-            const mergedPhotos = Array.from(photoMap.values());
-            const selectedIds = mergedPhotos.filter((p) => p.isSelected).map((p) => p.id);
-            const bestPhotosCount = Math.max(e.photosCount || 0, mergedPhotos.length, cloudPhotos.length);
-            return {
-              ...e,
-              photos: mergedPhotos,
-              photosCount: bestPhotosCount,
-              selectedCount: selectedIds.length,
-              selectedPhotoIds: selectedIds,
-              coverPhotoUrl: e.coverPhotoUrl || mergedPhotos[0]?.thumbnailUrl || mergedPhotos[0]?.url,
-            };
-          })
-        );
-        idbStorage.saveEventPhotos(activeEventId, cloudPhotos);
-      }
-    });
-
-    // 3. Real-time Firestore subcollection listener for live cross-device photo sync & client selection
+    // 2. Real-time Firestore subcollection listener for live cross-device photo sync & client selection
     const unsubPhotos = firebaseService.subscribeEventPhotos(activeEventId, (cloudPhotos) => {
       if (cloudPhotos && cloudPhotos.length > 0) {
-        setEvents((prev) =>
-          prev.map((e) => {
-            if (e.id !== activeEventId) return e;
-
-            // Merge cloud photo properties with existing photos without dropping any local photos
-            const photoMap = new Map<string, Photo>();
-            (e.photos || []).forEach((p) => photoMap.set(p.id, p));
-
-            cloudPhotos.forEach((cp) => {
-              const localPhoto = photoMap.get(cp.id);
-              photoMap.set(cp.id, {
-                ...cp,
-                url: localPhoto?.url || cp.url,
-                thumbnailUrl: localPhoto?.thumbnailUrl || cp.thumbnailUrl || cp.url,
-              });
-            });
-
-            const mergedPhotos = Array.from(photoMap.values());
-            const selectedIds = mergedPhotos.filter((p) => p.isSelected).map((p) => p.id);
-            const bestPhotosCount = Math.max(e.photosCount || 0, mergedPhotos.length, cloudPhotos.length);
-            return {
-              ...e,
-              photos: mergedPhotos,
-              photosCount: bestPhotosCount,
-              selectedCount: selectedIds.length,
-              selectedPhotoIds: selectedIds,
-              coverPhotoUrl: e.coverPhotoUrl || mergedPhotos[0]?.thumbnailUrl || mergedPhotos[0]?.url,
-            };
-          })
-        );
-        // Cache to IDB
+        mergePhotosIntoEvent(activeEventId, cloudPhotos);
         idbStorage.saveEventPhotos(activeEventId, cloudPhotos);
       }
     });
@@ -354,7 +338,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       unsubPhotos();
     };
-  }, [activeEventId]);
+  }, [activeEventId, refreshEventPhotos, mergePhotosIntoEvent]);
 
   const isNavigatingProgrammaticallyRef = useRef(false);
   const eventsRef = useRef(events);
@@ -1079,48 +1063,130 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addFolder = (eventId: string, folderName: string) => {
+    const cleanName = folderName.trim();
+    if (!cleanName || /^all(\s+folders|\s+photos)?$/i.test(cleanName)) return;
+
+    let updatedEventToSave: WeddingEvent | null = null;
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
         const currentFolders = e.folders || [];
         const newFolder: PhotoFolder = {
           id: `fld-${Date.now()}`,
-          name: folderName.trim(),
+          name: cleanName,
           visible: true,
           order: currentFolders.length,
         };
         const updated = { ...e, folders: [...currentFolders, newFolder] };
-        firebaseService.saveEvent(updated);
+        updatedEventToSave = updated;
         return updated;
       })
     );
-    showToast(`Folder "${folderName}" added!`, 'success');
+
+    if (updatedEventToSave) {
+      firebaseService.saveEvent(updatedEventToSave);
+      storage.saveEvents(
+        storage.getEvents().map((ev) => (ev.id === eventId ? updatedEventToSave! : ev))
+      );
+    }
+    showToast(`Folder "${cleanName}" added!`, 'success');
   };
 
-  const deleteFolder = (eventId: string, folderId: string) => {
-    setEvents((prev) =>
-      prev.map((e) => {
-        if (e.id !== eventId) return e;
-        const currentPhotos = e.photos || [];
-        const currentFolders = e.folders || [];
-        const deletedPhotos = currentPhotos.filter((p) => p.folderId === folderId);
-        deletedPhotos.forEach((p) => {
-          firebaseService.deletePhoto(eventId, p.id);
-          idbStorage.deleteEventPhotos(eventId, p.id);
-        });
-        const updated = {
-          ...e,
-          folders: currentFolders.filter((f) => f.id !== folderId),
-          photos: currentPhotos.filter((p) => p.folderId !== folderId),
-        };
-        firebaseService.saveEvent(updated);
-        return updated;
-      })
+  const deleteFolder = async (eventId: string, folderId: string, folderName?: string) => {
+    const currentEvent =
+      eventsRef.current.find((e) => e.id === eventId) ||
+      storage.getEvents().find((e) => e.id === eventId);
+    if (!currentEvent) return;
+
+    const currentFolders = currentEvent.folders || [];
+    const cleanSearchName = (folderName || '').toLowerCase().trim();
+    const targetFolder = currentFolders.find(
+      (f) =>
+        f.id === folderId ||
+        (cleanSearchName && f.name.toLowerCase().trim() === cleanSearchName) ||
+        (folderId.startsWith('fld-auto-') &&
+          f.name.toLowerCase().replace(/\s+/g, '-') === folderId.replace(/^fld-auto-\d+-/, ''))
     );
-    showToast('Folder deleted', 'info');
+    const targetFolderName = (targetFolder?.name || folderName || '').toLowerCase().trim();
+
+    // Collect all known photos across React state and in-memory cache
+    const cacheMap = eventPhotosCacheRef.current.get(eventId);
+    const cachedPhotos = cacheMap ? Array.from(cacheMap.values()) : [];
+    const statePhotos = currentEvent.photos || [];
+
+    const allPhotosMap = new Map<string, Photo>();
+    statePhotos.forEach((p) => allPhotosMap.set(p.id, p));
+    cachedPhotos.forEach((p) => allPhotosMap.set(p.id, p));
+
+    const isMatch = (p: Photo) => {
+      const pFolderId = p.folderId || '';
+      const pFolderName = (p.folderName || '').toLowerCase().trim();
+      return (
+        (folderId && pFolderId === folderId) ||
+        (targetFolder && pFolderId === targetFolder.id) ||
+        (targetFolderName && pFolderName === targetFolderName) ||
+        (cleanSearchName && pFolderName === cleanSearchName)
+      );
+    };
+
+    const deletedPhotos = Array.from(allPhotosMap.values()).filter(isMatch);
+    const deletedPhotoIds = new Set(deletedPhotos.map((p) => p.id));
+    const remainingPhotos = statePhotos.filter((p) => !deletedPhotoIds.has(p.id));
+    const remainingFolders = currentFolders.filter(
+      (f) =>
+        f.id !== folderId &&
+        (!targetFolder || f.id !== targetFolder.id) &&
+        (!targetFolderName || f.name.toLowerCase().trim() !== targetFolderName)
+    );
+
+    // 1. Remove deleted photos from in-memory cache accumulator immediately
+    if (cacheMap) {
+      deletedPhotoIds.forEach((id) => cacheMap.delete(id));
+    }
+
+    const updated: WeddingEvent = {
+      ...currentEvent,
+      folders: remainingFolders,
+      photos: remainingPhotos,
+      photosCount: remainingPhotos.length,
+      selectedCount: remainingPhotos.filter((p) => p.isSelected).length,
+      coverPhotoUrl: remainingPhotos[0]?.thumbnailUrl || remainingPhotos[0]?.url || undefined,
+    };
+
+    // 2. Update React state immediately
+    setEvents((prev) => prev.map((e) => (e.id === eventId ? updated : e)));
+
+    // 3. Immediately update localStorage so refresh NEVER restores the deleted folder!
+    storage.saveEvents(
+      storage.getEvents().map((ev) => (ev.id === eventId ? updated : ev))
+    );
+
+    // 4. Update Cloud Firestore parent event document
+    await firebaseService.saveEvent(updated);
+
+    // 5. Delete photos atomically from IndexedDB & Cloud Firestore subcollection
+    const photoIdsArray = Array.from(deletedPhotoIds);
+    idbStorage.deletePhotosByIds(photoIdsArray);
+    if (targetFolderName || folderId) {
+      idbStorage.deleteFolderPhotos(eventId, folderId, targetFolderName);
+    }
+    firebaseService.deletePhotos(eventId, photoIdsArray);
+
+    // 6. Update backend backup file
+    try {
+      fetch('/api/events/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: updated }),
+      }).catch(() => {});
+    } catch {}
+
+    const displayName = targetFolder?.name || folderName || 'Folder';
+    showToast(`Folder "${displayName}" aur uske photos permanently delete ho gaye.`, 'info');
   };
 
   const toggleFolderVisibility = (eventId: string, folderId: string) => {
+    let updatedEventToSave: WeddingEvent | null = null;
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
@@ -1131,10 +1197,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             f.id === folderId ? { ...f, visible: !f.visible } : f
           ),
         };
-        firebaseService.saveEvent(updated);
+        updatedEventToSave = updated;
         return updated;
       })
     );
+    if (updatedEventToSave) {
+      firebaseService.saveEvent(updatedEventToSave);
+      storage.saveEvents(
+        storage.getEvents().map((ev) => (ev.id === eventId ? updatedEventToSave! : ev))
+      );
+    }
   };
 
   const addPhotosToEvent = async (
@@ -1149,13 +1221,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       storage.getEvents().find((e) => e.id === eventId);
     if (!currentEvent) return [];
 
-    const existingFolders = [...(currentEvent.folders || [])];
+    // Get or initialize in-memory cache map for this event
+    let cacheMap = eventPhotosCacheRef.current.get(eventId);
+    if (!cacheMap) {
+      cacheMap = new Map<string, Photo>();
+      (currentEvent.photos || []).forEach((p) => cacheMap!.set(p.id, p));
+      eventPhotosCacheRef.current.set(eventId, cacheMap);
+    }
+
+    // Filter out any dummy / "All Folders" from existing folders
+    const existingFolders = [...(currentEvent.folders || [])].filter(
+      (f) => !/^all(\s+folders|\s+photos)?$/i.test(f.name.trim())
+    );
     const folderNameToIdMap = new Map<string, string>();
     existingFolders.forEach((f) => folderNameToIdMap.set(f.name.toLowerCase().trim(), f.id));
 
-    // Ensure new folders are recorded
+    // Find first valid non-"all" folder name from the batch if available
+    const primaryBatchFolder = newPhotosData.find(
+      (p) => p.folderName && !/^all(\s+folders|\s+photos)?$/i.test(p.folderName.trim())
+    )?.folderName?.trim();
+
+    // Ensure new folders are recorded, NEVER creating an "All Folders" folder
     newPhotosData.forEach((p) => {
-      const rawName = (p.folderName || 'Photos').trim();
+      let rawName = (p.folderName || '').trim();
+      // If folderName is "all", "all folders", or empty, fall back to the batch folder or first folder or 'Photos'
+      if (!rawName || /^all(\s+folders|\s+photos)?$/i.test(rawName)) {
+        rawName = primaryBatchFolder || (existingFolders.length > 0 ? existingFolders[0].name : 'Photos');
+      }
       const lowerName = rawName.toLowerCase();
       if (!folderNameToIdMap.has(lowerName)) {
         const newFolderId = `fld-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -1172,7 +1264,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Formatted photos with unique IDs and folder references
     const formattedPhotos: Photo[] = newPhotosData.map((p, idx) => {
-      const rawName = (p.folderName || 'Photos').trim();
+      let rawName = (p.folderName || '').trim();
+      if (!rawName || /^all(\s+folders|\s+photos)?$/i.test(rawName)) {
+        rawName = primaryBatchFolder || (existingFolders.length > 0 ? existingFolders[0].name : 'Photos');
+      }
       const matchedFolderId = folderNameToIdMap.get(rawName.toLowerCase()) || p.folderId;
       return {
         ...p,
@@ -1184,66 +1279,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
 
+    // Atomically append to in-memory accumulator so subsequent batches NEVER lose earlier photos
+    formattedPhotos.forEach((p) => {
+      cacheMap!.set(p.id, p);
+    });
+
+    const allAccumulatedPhotos = Array.from(cacheMap.values());
+    const coverPhoto =
+      currentEvent.coverPhotoUrl ||
+      allAccumulatedPhotos[0]?.thumbnailUrl ||
+      allAccumulatedPhotos[0]?.url;
+
     // 1. Immediately save to IndexedDB (virtually unlimited local storage capacity)
     await idbStorage.saveEventPhotos(eventId, formattedPhotos);
 
-    // 2. Save individual photo documents to Cloud Firestore subcollection
-    await firebaseService.savePhotos(eventId, formattedPhotos);
+    // 2. Update React state cleanly with ALL accumulated photos immediately
+    setEvents((prev) =>
+      prev.map((e) => {
+        if (e.id !== eventId) return e;
+        return {
+          ...e,
+          folders: existingFolders,
+          photos: allAccumulatedPhotos,
+          photosCount: allAccumulatedPhotos.length,
+          coverPhotoUrl: coverPhoto,
+        };
+      })
+    );
 
-    // 3. Update React state cleanly
-    let updatedEventToSave: WeddingEvent | null = null;
-    setEvents((prev) => {
-      const eventIndex = prev.findIndex((e) => e.id === eventId);
-      if (eventIndex === -1) return prev;
-
-      const e = prev[eventIndex];
-      const currentPhotos = [...(e.photos || [])];
-      const photoMap = new Map<string, Photo>();
-      currentPhotos.forEach((p) => photoMap.set(p.id, p));
-      formattedPhotos.forEach((p) => photoMap.set(p.id, p));
-      const updatedPhotos = Array.from(photoMap.values());
-
-      const coverPhoto =
-        e.coverPhotoUrl ||
-        (updatedPhotos.length > 0
-          ? updatedPhotos[0].thumbnailUrl || updatedPhotos[0].url
-          : undefined);
-
-      const updatedEvent: WeddingEvent = {
-        ...e,
-        folders: existingFolders,
-        photos: updatedPhotos,
-        photosCount: updatedPhotos.length,
-        coverPhotoUrl: coverPhoto,
-      };
-
-      updatedEventToSave = updatedEvent;
-      return prev.map((ev, i) => (i === eventIndex ? updatedEvent : ev));
-    });
-
-    // 4. Save parent event metadata to Firestore & localStorage
-    const allPhotosCombined = [...(currentEvent.photos || []), ...formattedPhotos];
-    const eventMetadataToSave: WeddingEvent = updatedEventToSave || {
+    // 3. Save parent event metadata to localStorage & Firestore
+    const eventMetadataToSave: WeddingEvent = {
       ...currentEvent,
       folders: existingFolders,
-      photos: allPhotosCombined,
-      photosCount: allPhotosCombined.length,
-      coverPhotoUrl:
-        currentEvent.coverPhotoUrl ||
-        (allPhotosCombined.length > 0
-          ? allPhotosCombined[0].thumbnailUrl || allPhotosCombined[0].url
-          : undefined),
+      photos: allAccumulatedPhotos,
+      photosCount: allAccumulatedPhotos.length,
+      coverPhotoUrl: coverPhoto,
     };
-
-    await firebaseService.saveEvent(eventMetadataToSave);
     storage.saveEvents(
       storage.getEvents().map((ev) => (ev.id === eventId ? eventMetadataToSave : ev))
     );
+    firebaseService.saveEvent(eventMetadataToSave).catch((e) => {
+      console.warn('Background saveEvent error:', e);
+    });
+
+    // 4. Save individual photo documents to Cloud Firestore subcollection in background
+    firebaseService.savePhotos(eventId, formattedPhotos).catch((err) => {
+      console.warn('Background Firestore savePhotos error:', err);
+    });
 
     return formattedPhotos;
   };
 
   const deletePhotoFromEvent = (eventId: string, photoId: string) => {
+    const cacheMap = eventPhotosCacheRef.current.get(eventId);
+    if (cacheMap) {
+      cacheMap.delete(photoId);
+    }
+
     let updatedEventToSave: WeddingEvent | null = null;
     setEvents((prev) =>
       prev.map((e) => {
@@ -1262,6 +1354,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     if (updatedEventToSave) {
       firebaseService.saveEvent(updatedEventToSave);
+      storage.saveEvents(
+        storage.getEvents().map((ev) => (ev.id === eventId ? updatedEventToSave! : ev))
+      );
     }
     firebaseService.deletePhoto(eventId, photoId);
     idbStorage.deleteEventPhotos(eventId, photoId);
@@ -1451,6 +1546,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleFolderVisibility,
         addPhotosToEvent,
         deletePhotoFromEvent,
+        refreshEventPhotos,
+        mergePhotosIntoEvent,
         togglePhotoSelection,
         submitClientSelection,
         storageRetentionDays,

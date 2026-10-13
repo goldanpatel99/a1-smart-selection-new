@@ -31,7 +31,15 @@ import { useOfflineSync } from '../hooks/useOfflineSync';
 import { getClientGalleryUrl } from '../utils/domainConfig';
 
 export const ClientGallery: React.FC = () => {
-  const { activeEvent, users, togglePhotoSelection, submitClientSelection, showToast, navigateTo } = useApp();
+  const {
+    activeEvent,
+    users,
+    togglePhotoSelection,
+    submitClientSelection,
+    showToast,
+    navigateTo,
+    refreshEventPhotos,
+  } = useApp();
 
   const [activeFolderId, setActiveFolderId] = useState<string>('all');
   const [filterMode, setFilterMode] = useState<'all' | 'selected' | 'unselected'>('all');
@@ -44,6 +52,12 @@ export const ClientGallery: React.FC = () => {
 
   // Offline Mode & Slow Network Auto-Saver
   const { isOnline, pendingCount, isSyncing, enqueuePhotoSync } = useOfflineSync(showToast);
+
+  // Directly pull all photos from Cloud Firestore & IndexedDB on ClientGallery mount
+  useEffect(() => {
+    if (!activeEvent?.id) return;
+    refreshEventPhotos(activeEvent.id);
+  }, [activeEvent?.id, refreshEventPhotos]);
 
   // Find photographer for 100% white-label branding
   const photographer = activeEvent
@@ -478,23 +492,25 @@ export const ClientGallery: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {/* Folders navigation tabs */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-          <button
-            onClick={() => setActiveFolderId('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-              activeFolderId === 'all'
-                ? 'bg-amber-500 text-neutral-950 shadow'
-                : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300'
-            }`}
-          >
-            <span>All Folders</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                activeFolderId === 'all' ? 'bg-black/20 text-neutral-950 font-mono' : 'bg-neutral-800'
+          {visibleFolders.length > 1 && (
+            <button
+              onClick={() => setActiveFolderId('all')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                activeFolderId === 'all'
+                  ? 'bg-amber-500 text-neutral-950 shadow'
+                  : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300'
               }`}
             >
-              {allPhotos.length}
-            </span>
-          </button>
+              <span>All Folders</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                  activeFolderId === 'all' ? 'bg-black/20 text-neutral-950 font-mono' : 'bg-neutral-800'
+                }`}
+              >
+                {allPhotos.length}
+              </span>
+            </button>
+          )}
 
           {visibleFolders.map((folder) => {
             const folderCount = allPhotos.filter((p) => p.folderId === folder.id).length;

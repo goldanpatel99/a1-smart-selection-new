@@ -218,6 +218,24 @@ export const firebaseService = {
     }
   },
 
+  // Delete multiple photos from Firestore in parallel batches
+  deletePhotos: async (eventId: string, photoIds: string[]) => {
+    if (!photoIds || photoIds.length === 0) return;
+    try {
+      const batchSize = 10;
+      for (let i = 0; i < photoIds.length; i += batchSize) {
+        const chunk = photoIds.slice(i, i + batchSize);
+        await Promise.all(
+          chunk.map((photoId) =>
+            deleteDoc(doc(db, 'events', eventId, 'photos', photoId)).catch(() => {})
+          )
+        );
+      }
+    } catch (err) {
+      console.warn('Error batch deleting photos from Firestore:', err);
+    }
+  },
+
   // Delete event and its photos subcollection
   deleteEvent: async (eventId: string) => {
     try {

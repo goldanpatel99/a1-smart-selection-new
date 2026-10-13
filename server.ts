@@ -41,9 +41,29 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Download production build zip for Netlify Drop deployment
+app.get('/download-netlify-build', (req, res) => {
+  const zipPath = path.join(__dirname, 'netlify_deploy.zip');
+  if (fs.existsSync(zipPath)) {
+    res.download(zipPath, 'a1smartselection-netlify-deploy.zip');
+  } else {
+    res.status(404).send('Netlify deploy zip not found');
+  }
+});
+
+// Download full project source code zip
+app.get('/download-source-zip', (req, res) => {
+  const zipPath = path.join(__dirname, 'project_source.zip');
+  if (fs.existsSync(zipPath)) {
+    res.download(zipPath, 'a1smartselection-full-source.zip');
+  } else {
+    res.status(404).send('Project source zip not found');
+  }
+});
+
 // Download production build zip for Hostinger / cPanel deployment
 app.get('/download-hostinger-build', (req, res) => {
-  const zipPath = path.join(__dirname, 'dist_hostinger.zip');
+  const zipPath = path.join(__dirname, 'netlify_deploy.zip');
   if (fs.existsSync(zipPath)) {
     res.download(zipPath, 'a1smartselection-website.zip');
   } else {

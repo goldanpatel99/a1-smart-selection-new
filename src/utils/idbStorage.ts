@@ -107,8 +107,60 @@ export const idbStorage = {
           all.filter((i) => i.eventId === eventId).forEach((i) => store.delete(i.id));
         };
       }
+
+      return new Promise((resolve) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
     } catch (e) {
       console.warn('IDB delete error:', e);
+    }
+  },
+
+  async deletePhotosByIds(photoIds: string[]): Promise<void> {
+    if (!photoIds || photoIds.length === 0) return;
+    try {
+      const db = await getDB();
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      for (const id of photoIds) {
+        store.delete(id);
+      }
+      return new Promise((resolve) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    } catch (e) {
+      console.warn('IDB deletePhotosByIds error:', e);
+    }
+  },
+
+  async deleteFolderPhotos(eventId: string, folderId?: string, folderName?: string): Promise<string[]> {
+    try {
+      const db = await getDB();
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+
+      return new Promise((resolve) => {
+        req.onsuccess = () => {
+          const all = (req.result || []) as Array<Photo & { eventId: string }>;
+          const cleanName = (folderName || '').toLowerCase().trim();
+          const toDelete = all.filter(
+            (p) =>
+              p.eventId === eventId &&
+              ((folderId && p.folderId === folderId) ||
+                (cleanName && (p.folderName || '').toLowerCase().trim() === cleanName))
+          );
+          const deletedIds = toDelete.map((p) => p.id);
+          deletedIds.forEach((id) => store.delete(id));
+          tx.oncomplete = () => resolve(deletedIds);
+          tx.onerror = () => resolve(deletedIds);
+        };
+        req.onerror = () => resolve([]);
+      });
+    } catch {
+      return [];
     }
   },
 
