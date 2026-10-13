@@ -53,10 +53,40 @@ export const ClientGallery: React.FC = () => {
   // Offline Mode & Slow Network Auto-Saver
   const { isOnline, pendingCount, isSyncing, enqueuePhotoSync } = useOfflineSync(showToast);
 
+  // Direct Cloud Sync state & handler
+  const [isDirectSyncing, setIsDirectSyncing] = useState(false);
+  const [hasInitialSyncCompleted, setHasInitialSyncCompleted] = useState(false);
+
+  const handleDirectSync = async () => {
+    if (!activeEvent?.id || isDirectSyncing) return;
+    setIsDirectSyncing(true);
+    try {
+      await refreshEventPhotos(activeEvent.id);
+      showToast('⚡ Gallery live cloud se sync ho gayi hai!', 'success');
+    } catch (err) {
+      console.warn('Sync error:', err);
+    } finally {
+      setIsDirectSyncing(false);
+      setHasInitialSyncCompleted(true);
+    }
+  };
+
   // Directly pull all photos from Cloud Firestore & IndexedDB on ClientGallery mount
   useEffect(() => {
     if (!activeEvent?.id) return;
-    refreshEventPhotos(activeEvent.id);
+    setIsDirectSyncing(true);
+    refreshEventPhotos(activeEvent.id).finally(() => {
+      setIsDirectSyncing(false);
+      setHasInitialSyncCompleted(true);
+    });
+
+    // Auto-dismiss safety timer after 3.5s so sync indicator never gets stuck
+    const timer = setTimeout(() => {
+      setHasInitialSyncCompleted(true);
+      setIsDirectSyncing(false);
+    }, 3500);
+
+    return () => clearTimeout(timer);
   }, [activeEvent?.id, refreshEventPhotos]);
 
   // Find photographer for 100% white-label branding
@@ -456,6 +486,16 @@ export const ClientGallery: React.FC = () => {
             </div>
 
             <button
+              onClick={handleDirectSync}
+              disabled={isDirectSyncing}
+              className="px-3 py-2.5 rounded-xl font-bold text-xs bg-neutral-900 hover:bg-neutral-850 text-neutral-300 hover:text-white border border-neutral-800 flex items-center gap-1.5 transition-all cursor-pointer shadow disabled:opacity-50"
+              title="Direct sync latest photos from Cloud"
+            >
+              <Sparkles className={`w-3.5 h-3.5 text-amber-400 ${isDirectSyncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isDirectSyncing ? 'Syncing...' : 'Sync'}</span>
+            </button>
+
+            <button
               onClick={handleShareGallery}
               className="px-3.5 py-2.5 rounded-xl font-bold text-xs bg-neutral-900 hover:bg-neutral-850 text-neutral-300 hover:text-white border border-neutral-800 flex items-center gap-1.5 transition-all cursor-pointer shadow"
               title="Copy gallery link to share with family or partner"
@@ -585,18 +625,22 @@ export const ClientGallery: React.FC = () => {
           </div>
         </div>
 
-        {/* Live Cloud Photos Streaming Indicator */}
-        {allPhotos.length > 0 && (activeEvent.photosCount || 0) > allPhotos.length && (
+        {/* Live Cloud Photos Streaming Indicator - Only during active sync, auto-dismisses smoothly */}
+        {!hasInitialSyncCompleted && isDirectSyncing && allPhotos.length > 0 && (activeEvent.photosCount || 0) > allPhotos.length && (
           <div className="flex items-center justify-between gap-3 px-4 py-2.5 my-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-300 animate-in fade-in">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 animate-spin text-amber-400" />
               <span>
-                Loading remaining photos from Cloud: <strong className="font-mono text-white">{allPhotos.length}</strong> of <strong className="font-mono text-white">{activeEvent.photosCount}</strong> loaded so far...
+                Syncing photos from Cloud: <strong className="font-mono text-white">{allPhotos.length}</strong> of <strong className="font-mono text-white">{activeEvent.photosCount}</strong> loaded so far...
               </span>
             </div>
-            <span className="text-[10px] bg-neutral-900 border border-neutral-800 px-2 py-0.5 rounded font-mono text-amber-400">
-              Live Cloud Sync
-            </span>
+            <button
+              onClick={handleDirectSync}
+              className="text-[10px] bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 px-2 py-0.5 rounded font-mono text-amber-400 transition-colors flex items-center gap-1"
+            >
+              <Sparkles className="w-2.5 h-2.5" />
+              <span>Direct Refresh</span>
+            </button>
           </div>
         )}
 
@@ -606,9 +650,16 @@ export const ClientGallery: React.FC = () => {
             <div className="text-center py-20 bg-neutral-900/30 rounded-3xl border border-neutral-800/80 my-8">
               <Sparkles className="w-10 h-10 text-amber-400 animate-pulse mx-auto mb-3" />
               <p className="text-sm font-bold text-white mb-1">Loading Photos From Cloud...</p>
-              <p className="text-xs text-neutral-400">
+              <p className="text-xs text-neutral-400 mb-4">
                 Wedding photos are syncing from Cloud Firestore ({activeEvent.photosCount} photos).
               </p>
+              <button
+                onClick={handleDirectSync}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-amber-400 text-xs font-semibold rounded-xl border border-neutral-700 transition-all inline-flex items-center gap-2 shadow"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Tap to Direct Sync Now
+              </button>
             </div>
           ) : (
             <div className="text-center py-20 bg-neutral-900/30 rounded-3xl border border-neutral-800/80 my-8">

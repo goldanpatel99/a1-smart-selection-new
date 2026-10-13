@@ -287,9 +287,9 @@ export const PhotoUploadPage: React.FC = () => {
 
             try {
               const compressed = await compressAndWatermarkImage(file, {
-                maxWidth: 1100,
-                maxHeight: 900,
-                quality: 0.65,
+                maxWidth: 1000,
+                maxHeight: 800,
+                quality: 0.6,
                 watermarkText: applyWatermark
                   ? currentUser?.watermarkText || currentUser?.studioName?.toUpperCase() || 'PREVIEW'
                   : '',

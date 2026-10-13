@@ -17,9 +17,9 @@ export async function compressAndWatermarkImage(
   options: CompressionOptions = {}
 ): Promise<{ dataUrl: string; thumbnailUrl: string; sizeBytes: number; filename: string }> {
   const {
-    maxWidth = 1100,
-    maxHeight = 900,
-    quality = 0.65, // Efficient compression for instant loading & storage saving
+    maxWidth = 1000,
+    maxHeight = 800,
+    quality = 0.6, // Fast, lightweight, crisp compression for instant upload & client sync
     watermarkText = '',
     watermarkPosition = 'bottom-right',
     watermarkOpacity = 0.35,
@@ -168,18 +168,16 @@ export async function compressAndWatermarkImage(
     let dataUrl = canvas.toDataURL('image/jpeg', quality);
 
     // Cloud storage safety guarantee:
-    // Firestore single document limit is 1,048,576 bytes.
-    // If base64 string exceeds 650,000 characters, automatically re-compress to ensure
-    // guaranteed 100% upload success without any document rejection.
-    if (dataUrl.length > 650000) {
-      dataUrl = canvas.toDataURL('image/jpeg', 0.52);
+    // Ensure base64 string stays under 380KB for instantaneous Firestore and mobile network sync
+    if (dataUrl.length > 380000) {
+      dataUrl = canvas.toDataURL('image/jpeg', 0.5);
     }
     const sizeBytes = Math.round((dataUrl.length * 3) / 4);
 
-    // Quick small thumbnail (downscale to max 300px for instant grid rendering)
+    // Quick small thumbnail (downscale to max 240px for instant grid rendering)
     let thumbnailUrl = dataUrl;
-    if (width > 300 || height > 300) {
-      const thumbRatio = Math.min(300 / width, 300 / height);
+    if (width > 240 || height > 240) {
+      const thumbRatio = Math.min(240 / width, 240 / height);
       const thumbW = Math.round(width * thumbRatio);
       const thumbH = Math.round(height * thumbRatio);
       const thumbCanvas = document.createElement('canvas');
@@ -189,7 +187,7 @@ export async function compressAndWatermarkImage(
       if (thumbCtx) {
         thumbCtx.imageSmoothingEnabled = true;
         thumbCtx.drawImage(canvas, 0, 0, thumbW, thumbH);
-        thumbnailUrl = thumbCanvas.toDataURL('image/jpeg', 0.6);
+        thumbnailUrl = thumbCanvas.toDataURL('image/jpeg', 0.5);
       }
     }
 

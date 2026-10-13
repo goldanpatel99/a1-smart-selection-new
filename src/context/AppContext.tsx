@@ -199,18 +199,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ? ce.folders
             : (existing?.folders || []);
 
-          const bestPhotosCount = Math.max(
-            ce.photosCount || 0,
-            finalPhotos.length,
-            existing?.photosCount || 0,
-            existingPhotos.length
-          );
+          // Accurate photo count: Use finalPhotos.length if photos are loaded, otherwise ce.photosCount
+          const accuratePhotosCount = finalPhotos.length > 0
+            ? finalPhotos.length
+            : (ce.photosCount !== undefined ? ce.photosCount : (existing?.photosCount || 0));
 
           return {
             ...ce,
             folders: finalFolders,
             photos: finalPhotos,
-            photosCount: bestPhotosCount,
+            photosCount: accuratePhotosCount,
             selectedCount: ce.selectedPhotoIds ? ce.selectedPhotoIds.length : (ce.selectedCount ?? finalPhotos.filter((p) => p.isSelected).length),
           };
         });
@@ -286,12 +284,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const mergedPhotos = Array.from(photoMap.values());
         const selectedIds = mergedPhotos.filter((p) => p.isSelected).map((p) => p.id);
-        const bestPhotosCount = Math.max(e.photosCount || 0, mergedPhotos.length, photosToMerge.length);
+        const accurateCount = mergedPhotos.length > 0
+          ? mergedPhotos.length
+          : Math.max(e.photosCount || 0, photosToMerge.length);
 
         return {
           ...e,
           photos: mergedPhotos,
-          photosCount: bestPhotosCount,
+          photosCount: accurateCount,
           selectedCount: selectedIds.length,
           selectedPhotoIds: selectedIds,
           coverPhotoUrl: e.coverPhotoUrl || mergedPhotos[0]?.thumbnailUrl || mergedPhotos[0]?.url,
@@ -303,7 +303,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const refreshEventPhotos = useCallback(async (eventId: string): Promise<Photo[]> => {
     if (!eventId) return [];
 
-    // 1. Fetch from local IDB
+    // 1. Fetch from local IDB (instant)
     const cached = await idbStorage.getEventPhotos(eventId);
     if (cached && cached.length > 0) {
       mergePhotosIntoEvent(eventId, cached);
@@ -316,8 +316,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       idbStorage.saveEventPhotos(eventId, cloudPhotos);
     }
 
+    // 3. Direct auto-push: If local IDB has photos that are missing from cloud, push them to cloud
+    if (cached && cached.length > (cloudPhotos?.length || 0)) {
+      const cloudPhotoIds = new Set((cloudPhotos || []).map((p) => p.id));
+      const missingPhotos = cached.filter((p) => !cloudPhotoIds.has(p.id));
+      if (missingPhotos.length > 0) {
+        firebaseService.savePhotos(eventId, missingPhotos).catch(() => {});
+      }
+    }
+
     const cacheMap = eventPhotosCacheRef.current.get(eventId);
-    return cacheMap ? Array.from(cacheMap.values()) : cloudPhotos || [];
+    const resolvedPhotos = cacheMap
+      ? Array.from(cacheMap.values())
+      : (cloudPhotos?.length ? cloudPhotos : cached || []);
+
+    if (resolvedPhotos.length > 0) {
+      setEvents((prev) =>
+        prev.map((e) => {
+          if (e.id !== eventId) return e;
+          return {
+            ...e,
+            photos: resolvedPhotos,
+            photosCount: resolvedPhotos.length,
+          };
+        })
+      );
+    }
+
+    return resolvedPhotos;
   }, [mergePhotosIntoEvent]);
 
   // Synchronize photos for active event from Cloud Firestore & IndexedDB in real time (cross-device sync!)
@@ -1318,14 +1344,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     storage.saveEvents(
       storage.getEvents().map((ev) => (ev.id === eventId ? eventMetadataToSave : ev))
     );
-    firebaseService.saveEvent(eventMetadataToSave).catch((e) => {
-      console.warn('Background saveEvent error:', e);
-    });
+    // 4. Directly save individual photo documents to Cloud Firestore subcollection with guaranteed await
+    try {
+      await firebaseService.savePhotos(eventId, formattedPhotos);
+    } catch (saveErr) {
+      console.warn('Direct Firestore savePhotos error:', saveErr);
+    }
 
-    // 4. Save individual photo documents to Cloud Firestore subcollection in background
-    firebaseService.savePhotos(eventId, formattedPhotos).catch((err) => {
-      console.warn('Background Firestore savePhotos error:', err);
-    });
+    // 5. Save updated parent event document to Cloud Firestore
+    try {
+      await firebaseService.saveEvent(eventMetadataToSave);
+    } catch (e) {
+      console.warn('Firestore saveEvent error:', e);
+    }
 
     return formattedPhotos;
   };

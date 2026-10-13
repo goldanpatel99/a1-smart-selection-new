@@ -102,10 +102,12 @@ export const firebaseService = {
 
   // Save photos to Firestore subcollection /events/{eventId}/photos/{photo.id}
   // Features: 3x auto-retry per photo with exponential backoff for 100% cloud persistence without missing photos
-  savePhotos: async (eventId: string, photos: Photo[]) => {
+  savePhotos: async (eventId: string, photos: Photo[]): Promise<number> => {
+    if (!eventId || !photos || photos.length === 0) return 0;
+    let savedCount = 0;
     try {
-      // Chunk photos to avoid network congestion (6 parallel writes per batch)
-      const chunkSize = 6;
+      // Chunk photos to avoid network congestion (5 parallel writes per batch)
+      const chunkSize = 5;
       for (let i = 0; i < photos.length; i += chunkSize) {
         const chunk = photos.slice(i, i + chunkSize);
         await Promise.all(
@@ -132,6 +134,7 @@ export const firebaseService = {
                   },
                   { merge: true }
                 );
+                savedCount++;
                 return; // Successfully saved
               } catch (singleErr) {
                 attempt++;
@@ -139,15 +142,17 @@ export const firebaseService = {
                   console.warn(`Failed to save photo ${photo.id} to Firestore after ${maxAttempts} attempts:`, singleErr);
                 } else {
                   // Brief backoff before retry to recover from transient network drops
-                  await new Promise((res) => setTimeout(res, 200 * attempt));
+                  await new Promise((res) => setTimeout(res, 120 * attempt));
                 }
               }
             }
           })
         );
       }
+      return savedCount;
     } catch (err) {
       console.error('Error saving photos to Firestore subcollection:', err);
+      return savedCount;
     }
   },
 
@@ -273,9 +278,11 @@ export const firebaseService = {
       if (targetEvent) {
         // Fetch subcollection photos for complete gallery view
         const photos = await firebaseService.fetchEventPhotos(targetEvent.id);
+        const resolvedPhotos = photos.length > 0 ? photos : targetEvent.photos || [];
         return {
           ...targetEvent,
-          photos: photos.length > 0 ? photos : targetEvent.photos || [],
+          photos: resolvedPhotos,
+          photosCount: resolvedPhotos.length > 0 ? resolvedPhotos.length : (targetEvent.photosCount || 0),
         };
       }
     } catch (err) {
