@@ -281,7 +281,38 @@ export const ClientGallery: React.FC = () => {
     return diff > 0 ? diff : 0;
   }, [activeEvent?.deadlineDate]);
 
+  const [loadTimeout, setLoadTimeout] = useState(false);
+
+  useEffect(() => {
+    if (!activeEvent) {
+      const timer = setTimeout(() => {
+        setLoadTimeout(true);
+      }, 7000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeEvent]);
+
   if (!activeEvent) {
+    if (!loadTimeout) {
+      return (
+        <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-4 text-center">
+          <div className="relative mb-4">
+            <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto animate-pulse shadow-lg shadow-amber-500/10">
+              <Camera className="w-8 h-8" />
+            </div>
+            <Sparkles className="w-5 h-5 text-amber-400 absolute -top-1 -right-1 animate-spin" />
+          </div>
+          <h2 className="text-xl font-bold font-heading text-white mb-2">Opening Wedding Gallery...</h2>
+          <p className="text-xs text-neutral-400 max-w-sm mb-6 leading-relaxed">
+            Connecting directly to your private photo selection gallery...
+          </p>
+          <div className="w-48 h-1.5 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
+            <div className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full animate-pulse w-3/4"></div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 text-center">
         <div className="max-w-md p-8 bg-neutral-900 border border-neutral-800 rounded-3xl shadow-xl">
@@ -289,9 +320,18 @@ export const ClientGallery: React.FC = () => {
             <Camera className="w-6 h-6" />
           </div>
           <h2 className="text-xl font-bold text-white mb-2">Private Client Gallery</h2>
-          <p className="text-xs text-neutral-400 leading-relaxed">
-            Aapka wedding event link filhaal available nahi hai ya complete ho chuka hai. Kripya apne studio/photographer se contact karein.
+          <p className="text-xs text-neutral-400 leading-relaxed mb-6">
+            Aapka wedding event link filhaal available nahi hai ya invalid hai. Kripya apne studio ya photographer se naya link prapt karein.
           </p>
+          <button
+            onClick={() => {
+              window.location.hash = '';
+              window.location.reload();
+            }}
+            className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold rounded-xl transition cursor-pointer"
+          >
+            ← Back to Home
+          </button>
         </div>
       </div>
     );
@@ -320,71 +360,50 @@ export const ClientGallery: React.FC = () => {
         </div>
       )}
 
-      {/* Hero Header */}
-      <div className="relative py-12 px-4 sm:px-6 lg:px-8 text-center border-b border-neutral-800/80 bg-gradient-to-b from-neutral-900/80 to-neutral-950">
-        <div className="max-w-3xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-semibold mb-3">
+      {/* Compact Hero Header - Direct focus on photos */}
+      <div className="relative py-4 sm:py-6 px-4 sm:px-6 lg:px-8 text-center border-b border-neutral-800/80 bg-gradient-to-b from-neutral-900/80 to-neutral-950">
+        <div className="max-w-4xl mx-auto flex flex-col items-center">
+          <div className="inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-semibold mb-2">
             <Camera className="w-3.5 h-3.5" />
             <span>Captured by {activeEvent.studioName}</span>
           </div>
 
-          <h1 className="text-3xl sm:text-5xl font-extrabold font-heading text-white tracking-tight">
+          <h1 className="text-2xl sm:text-4xl font-extrabold font-heading text-white tracking-tight">
             {activeEvent.coupleName}
           </h1>
-          <p className="text-sm sm:text-base text-neutral-400 mt-1.5 font-medium">
+          <p className="text-xs sm:text-sm text-neutral-400 mt-0.5 font-medium">
             {activeEvent.title}
           </p>
 
-          {/* Live Countdown Timer */}
-          <div className="flex items-center justify-center gap-3 mt-4 text-xs">
+          {/* Compact Info Strip: Countdown + Album Guide + Heart Tip */}
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mt-3 text-xs">
             {/* Live Ticking Countdown Box */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900 border border-amber-500/40 text-amber-300 font-mono shadow-md">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-              </span>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900 border border-amber-500/40 text-amber-300 font-mono shadow-sm text-xs">
               <Clock className="w-3.5 h-3.5 text-amber-400" />
               {timeLeft.isExpired ? (
                 <span className="text-rose-400 font-bold font-sans">Deadline Expired</span>
               ) : (
                 <span className="flex items-center gap-1 font-bold">
-                  <span>Time Left:</span>
-                  <span className="text-white bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800">
-                    {String(timeLeft.days).padStart(2, '0')}d
-                  </span>
-                  <span>:</span>
-                  <span className="text-white bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800">
-                    {String(timeLeft.hours).padStart(2, '0')}h
-                  </span>
-                  <span>:</span>
-                  <span className="text-white bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800">
-                    {String(timeLeft.minutes).padStart(2, '0')}m
-                  </span>
-                  <span>:</span>
-                  <span className="text-rose-400 bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800 animate-pulse">
-                    {String(timeLeft.seconds).padStart(2, '0')}s
+                  <span className="text-neutral-400">Time:</span>
+                  <span className="text-white font-mono">
+                    {String(timeLeft.days).padStart(2, '0')}d {String(timeLeft.hours).padStart(2, '0')}h {String(timeLeft.minutes).padStart(2, '0')}m {String(timeLeft.seconds).padStart(2, '0')}s
                   </span>
                 </span>
               )}
             </div>
-          </div>
 
-          {/* Instructions note */}
-          <p className="mt-4 text-xs text-neutral-400 max-w-lg mx-auto bg-neutral-900/60 border border-neutral-800 rounded-2xl py-2 px-4">
-            💡 Apni pasand ki photos par <span className="text-rose-400 font-bold">❤️ Heart</span> tap karein. Sabhi selections apne-aap save hoti rehti hain.
-          </p>
-
-          {/* Live Album Estimator Notice Banner (1 Sheet = 1 Page) */}
-          <div className="mt-3 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-neutral-900/90 border border-amber-500/30 text-xs text-neutral-300 shadow">
-            <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-            <span>
-              Album Guide: <strong className="text-amber-300 font-mono">≈{photosPerSheet} Photos = 1 Sheet</strong> (1 Page)
-            </span>
-            {selectedCount > 0 && (
-              <span className="text-neutral-400 font-medium hidden sm:inline">
-                • Current: <strong className="text-white font-mono">{selectedCount}</strong> selected = <strong className="text-amber-300 font-mono">~{estimatedSheets} Sheets ({estimatedPages} Pages)</strong>
+            {/* Live Album Guide */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900/90 border border-amber-500/30 text-xs text-neutral-300">
+              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+              <span>
+                ≈{photosPerSheet} Photos = 1 Sheet {selectedCount > 0 && <strong className="text-amber-300 ml-1">({estimatedSheets} Sheets)</strong>}
               </span>
-            )}
+            </div>
+
+            {/* Tap tip */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900/60 border border-neutral-800 text-xs text-neutral-400">
+              <span>💡 Tap <span className="text-rose-400 font-bold">❤️ Heart</span> to select photos</span>
+            </div>
           </div>
         </div>
       </div>

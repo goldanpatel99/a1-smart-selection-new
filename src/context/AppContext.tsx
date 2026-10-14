@@ -105,28 +105,105 @@ interface AppContextType {
   runStorageAutoClean: () => number;
 }
 
+const getInitialRoute = (): { view: AppView; eventId: string | null; slugOrId: string | null } => {
+  if (typeof window === 'undefined') {
+    return { view: 'landing', eventId: null, slugOrId: null };
+  }
+
+  const rawHash = window.location.hash || '';
+  const cleanHash = rawHash.replace(/^[#/]+/, '').trim();
+  const rawPath = window.location.pathname || '';
+  const cleanPath = rawPath.replace(/^\/+/, '').trim();
+
+  let slugOrId: string | null = null;
+  if (cleanHash.startsWith('gallery/')) {
+    slugOrId = cleanHash.replace(/^gallery\//, '').trim();
+  } else if (cleanHash.startsWith('g/')) {
+    slugOrId = cleanHash.replace(/^g\//, '').trim();
+  } else if (cleanPath.startsWith('gallery/')) {
+    slugOrId = cleanPath.replace(/^gallery\//, '').trim();
+  } else if (cleanPath.startsWith('g/')) {
+    slugOrId = cleanPath.replace(/^g\//, '').trim();
+  } else {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const qg =
+        params.get('gallery') ||
+        params.get('g') ||
+        params.get('event') ||
+        params.get('eventId') ||
+        params.get('slug') ||
+        params.get('id');
+      if (qg) slugOrId = qg.trim();
+    } catch {}
+  }
+
+  // Direct client gallery detection: Immediately render client gallery without landing page flash!
+  if (slugOrId) {
+    if (
+      slugOrId === 'sample-client-gallery' ||
+      slugOrId === 'sample-wedding' ||
+      slugOrId === 'demo' ||
+      slugOrId === 'demo-sample-event'
+    ) {
+      return { view: 'client-gallery', eventId: 'demo-sample-event', slugOrId };
+    }
+    const storedEvents = storage.getEvents();
+    const found = storedEvents.find((e) => e.slug === slugOrId || e.id === slugOrId);
+    return {
+      view: 'client-gallery',
+      eventId: found ? found.id : slugOrId,
+      slugOrId,
+    };
+  }
+
+  if (cleanHash === 'admin' || cleanPath === 'admin') {
+    const storedUid = storage.getCurrentUserId();
+    const storedUsers = storage.getUsers();
+    const authedUser = storedUsers.find((u) => u.id === storedUid);
+    if (authedUser && authedUser.role === 'admin') {
+      return { view: 'admin-panel', eventId: null, slugOrId: null };
+    }
+  }
+
+  if (cleanHash === 'dashboard' || cleanPath === 'dashboard') {
+    const storedUid = storage.getCurrentUserId();
+    if (storedUid) {
+      return { view: 'dashboard', eventId: null, slugOrId: null };
+    }
+  }
+
+  if (cleanHash.startsWith('upload/')) {
+    return { view: 'photo-upload', eventId: cleanHash.replace('upload/', ''), slugOrId: null };
+  }
+
+  if (cleanHash.startsWith('results/')) {
+    return { view: 'selection-results', eventId: cleanHash.replace('results/', ''), slugOrId: null };
+  }
+
+  return { view: 'landing', eventId: storage.getActiveEventId(), slugOrId: null };
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const initialRoute = useMemo(() => getInitialRoute(), []);
   const [users, setUsers] = useState<User[]>(() => storage.getUsers());
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => storage.getCurrentUserId());
   const [events, setEvents] = useState<WeddingEvent[]>(() => storage.getEvents());
   const [demoEvent, setDemoEvent] = useState<WeddingEvent>(SAMPLE_DEMO_EVENT);
   const [transactions, setTransactions] = useState<PointTransaction[]>(() => storage.getTransactions());
   const [adminSettings, setAdminSettings] = useState<AdminSettings>(() => storage.getSettings());
-  const [currentView, setCurrentView] = useState<AppView>('landing');
-  const [activeEventId, setActiveEventId] = useState<string | null>(() => storage.getActiveEventId());
+  const [currentView, setCurrentView] = useState<AppView>(initialRoute.view);
+  const [activeEventId, setActiveEventId] = useState<string | null>(initialRoute.eventId);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   // Derived current user
   const currentUser = users.find((u) => u.id === currentUserId) || null;
 
-  // Sync to storage and Cloud Firestore
+  // Sync to local storage (instant, high-speed local persistence without burning Firestore daily quotas)
   useEffect(() => {
     storage.saveUsers(users);
-    users.forEach((u) => {
-      firebaseService.saveUser(u);
-    });
   }, [users]);
 
   useEffect(() => {
@@ -143,14 +220,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     storage.saveTransactions(transactions);
-    transactions.slice(0, 20).forEach((t) => {
-      firebaseService.saveTransaction(t);
-    });
   }, [transactions]);
 
   useEffect(() => {
     storage.saveSettings(adminSettings);
-    firebaseService.saveSettings(adminSettings);
   }, [adminSettings]);
 
   // Real-time Cloud Firestore Listeners
@@ -377,9 +450,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const handleRouteFromHash = () => {
       if (isNavigatingProgrammaticallyRef.current) return;
 
-      const hash = window.location.hash.replace('#', '');
-      if (hash.startsWith('gallery/')) {
-        const slugOrId = hash.replace('gallery/', '');
+      const rawHash = window.location.hash || '';
+      const cleanHash = rawHash.replace(/^[#/]+/, '').trim();
+      const rawPath = window.location.pathname || '';
+      const cleanPath = rawPath.replace(/^\/+/, '').trim();
+
+      let slugOrId: string | null = null;
+      if (cleanHash.startsWith('gallery/')) {
+        slugOrId = cleanHash.replace(/^gallery\//, '').trim();
+      } else if (cleanHash.startsWith('g/')) {
+        slugOrId = cleanHash.replace(/^g\//, '').trim();
+      } else if (cleanPath.startsWith('gallery/')) {
+        slugOrId = cleanPath.replace(/^gallery\//, '').trim();
+      } else if (cleanPath.startsWith('g/')) {
+        slugOrId = cleanPath.replace(/^g\//, '').trim();
+      } else {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const qg =
+            params.get('gallery') ||
+            params.get('g') ||
+            params.get('event') ||
+            params.get('eventId') ||
+            params.get('slug') ||
+            params.get('id');
+          if (qg) slugOrId = qg.trim();
+        } catch {}
+      }
+
+      if (slugOrId) {
         if (
           slugOrId === 'sample-client-gallery' ||
           slugOrId === 'sample-wedding' ||
@@ -390,12 +489,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setCurrentView('client-gallery');
           return;
         }
+
         const currentEvents = eventsRef.current;
         const evt = currentEvents.find((e) => e.slug === slugOrId || e.id === slugOrId);
         if (evt) {
           setActiveEventId(evt.id);
           setCurrentView('client-gallery');
         } else {
+          setActiveEventId(slugOrId);
+          setCurrentView('client-gallery');
           // Fetch from Cloud Firestore if opened by client on a fresh device
           firebaseService.getEventBySlugOrId(slugOrId).then((cloudEvt) => {
             if (cloudEvt) {
@@ -408,7 +510,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           });
         }
-      } else if (hash === 'admin') {
+        return;
+      }
+
+      if (cleanHash === 'admin' || cleanPath === 'admin') {
         const storedUid = storage.getCurrentUserId();
         const authedUser = usersRef.current.find((u) => u.id === storedUid);
         if (authedUser && authedUser.role === 'admin') {
@@ -417,7 +522,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setCurrentView('landing');
           window.location.hash = '';
         }
-      } else if (hash === 'dashboard') {
+      } else if (cleanHash === 'dashboard' || cleanPath === 'dashboard') {
         const storedUid = storage.getCurrentUserId();
         if (storedUid) {
           setCurrentView('dashboard');
@@ -425,12 +530,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setCurrentView('landing');
           window.location.hash = '';
         }
-      } else if (hash.startsWith('upload/')) {
-        const eid = hash.replace('upload/', '');
+      } else if (cleanHash.startsWith('upload/')) {
+        const eid = cleanHash.replace('upload/', '');
         if (eid) setActiveEventId(eid);
         setCurrentView('photo-upload');
-      } else if (hash.startsWith('results/')) {
-        const eid = hash.replace('results/', '');
+      } else if (cleanHash.startsWith('results/')) {
+        const eid = cleanHash.replace('results/', '');
         if (eid) setActiveEventId(eid);
         setCurrentView('selection-results');
       }
@@ -438,7 +543,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     handleRouteFromHash();
     window.addEventListener('hashchange', handleRouteFromHash);
-    return () => window.removeEventListener('hashchange', handleRouteFromHash);
+    window.addEventListener('popstate', handleRouteFromHash);
+    return () => {
+      window.removeEventListener('hashchange', handleRouteFromHash);
+      window.removeEventListener('popstate', handleRouteFromHash);
+    };
   }, []);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -728,6 +837,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const adminUpdateSettings = (newSettings: AdminSettings) => {
     setAdminSettings(newSettings);
+    storage.saveSettings(newSettings);
+    firebaseService.saveSettings(newSettings);
     showToast('Admin settings & pricing updated!', 'success');
   };
 
@@ -1533,12 +1644,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return demoEvent;
     }
     if (!activeEventId) return null;
-    const foundInState = events.find((e) => e.id === activeEventId);
+    const foundInState = events.find((e) => e.id === activeEventId || e.slug === activeEventId);
     if (foundInState) return foundInState;
     // Failsafe fallback to local storage
-    const foundInStorage = storage.getEvents().find((e) => e.id === activeEventId);
-    return foundInStorage || null;
-  }, [activeEventId, events, demoEvent]);
+    const foundInStorage = storage.getEvents().find((e) => e.id === activeEventId || e.slug === activeEventId);
+    if (foundInStorage) return foundInStorage;
+
+    // Direct Instant Client Shell: When opened via client link, render immediately without landing page flash or 7s freeze!
+    if (initialRoute.slugOrId && (activeEventId === initialRoute.slugOrId || activeEventId === initialRoute.eventId)) {
+      const formattedTitle = initialRoute.slugOrId
+        .split(/[-_]/)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+      return {
+        id: activeEventId,
+        slug: initialRoute.slugOrId,
+        title: formattedTitle || 'Wedding Gallery',
+        coupleName: formattedTitle || 'Wedding Couple',
+        photographerId: 'photographer-guest',
+        eventDate: new Date().toISOString().split('T')[0],
+        deadlineDate: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
+        studioName: 'Wedding Studio',
+        photosCount: 0,
+        photos: [],
+        folders: [],
+        status: 'active' as const,
+        createdAt: new Date().toISOString(),
+      };
+    }
+    return null;
+  }, [activeEventId, events, demoEvent, initialRoute]);
 
   return (
     <AppContext.Provider

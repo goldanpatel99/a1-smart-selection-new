@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="40%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#b45309" />
+    </linearGradient>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1c1917" />
+      <stop offset="100%" stop-color="#09090b" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Base Squircle -->
+  <rect width="64" height="64" rx="16" fill="url(#bgGrad)" stroke="url(#goldGrad)" stroke-width="1.8" />
+
+  <!-- Camera Body Outline -->
+  <path d="M18 24 L22 18 L42 18 L46 24 L50 24 C52.2 24 54 25.8 54 28 L54 48 C54 50.2 52.2 52 50 52 L14 52 C11.8 52 10 50.2 10 48 L10 28 C10 25.8 11.8 24 14 24 Z" 
+        fill="none" 
+        stroke="url(#goldGrad)" 
+        stroke-width="2.5" 
+        stroke-linecap="round" 
+        stroke-linejoin="round" />
+
+  <!-- Center Aperture Circle -->
+  <circle cx="32" cy="37" r="10.5" fill="#09090b" stroke="url(#goldGrad)" stroke-width="2" />
+
+  <!-- Heart Selection Mark in Center -->
+  <path d="M32 42.5 L30.5 41.1 C25.5 36.6 22.2 33.6 22.2 29.9 C22.2 26.9 24.5 24.6 27.5 24.6 C29.2 24.6 30.8 25.4 32 26.6 C33.2 25.4 34.8 24.6 36.5 24.6 C39.5 24.6 41.8 26.9 41.8 29.9 C41.8 33.6 38.5 36.6 33.5 41.1 Z" 
+        transform="matrix(0.55 0 0 0.55 14.4 20.8)"
+        fill="url(#goldGrad)" 
+        filter="url(#glow)" />
+
+  <!-- A1 Top Flash Tag -->
+  <text x="32" y="16" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-weight="800" font-size="8" fill="#fef08a" text-anchor="middle" letter-spacing="1">A1</text>
+</svg>

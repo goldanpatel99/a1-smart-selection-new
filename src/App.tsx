@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
 import { LandingPage } from './components/LandingPage';
@@ -16,7 +16,25 @@ import { WhatsAppSupportButton } from './components/WhatsAppSupportButton';
 import { PointTier } from './types';
 
 function AppContent() {
-  const { currentView, currentUser } = useApp();
+  const { currentView, currentUser, activeEvent } = useApp();
+
+  // Dynamic Browser Tab Title for SEO and polished UX
+  useEffect(() => {
+    if (currentView === 'client-gallery') {
+      const title = activeEvent?.coupleName || activeEvent?.title || 'Wedding Gallery';
+      document.title = `${title} | A1 Smart Selection`;
+    } else if (currentView === 'dashboard') {
+      document.title = 'Studio Dashboard | A1 Smart Selection';
+    } else if (currentView === 'photo-upload') {
+      document.title = 'Upload Photos | A1 Smart Selection';
+    } else if (currentView === 'selection-results') {
+      document.title = 'Selection Results | A1 Smart Selection';
+    } else if (currentView === 'admin-panel') {
+      document.title = 'Admin Portal | A1 Smart Selection';
+    } else {
+      document.title = 'A1 Smart Selection | Studio Client Portal';
+    }
+  }, [currentView, activeEvent]);
 
   // Modal states
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'signup' | 'admin' }>({
