@@ -48,18 +48,38 @@ export const SelectionResultsPage: React.FC = () => {
 
   const allPhotos = activeEvent?.photos || [];
   const allFolders = activeEvent?.folders || [];
-
   const effectiveFolders = useMemo(() => {
-    if (allFolders.length > 0) return allFolders;
-    if (allPhotos.length === 0) return [];
-    const folderNames = Array.from(new Set(allPhotos.map((p) => (p.folderName || 'Photos').trim())));
-    return folderNames.map((name, idx) => ({
-      id: `fld-auto-${idx}-${name.toLowerCase().replace(/\s+/g, '-')}`,
-      name,
-      visible: true,
-      order: idx,
-    }));
-  }, [allFolders, allPhotos]);
+    if (!activeEvent) return [];
+
+    const result: Array<{ id: string; name: string }> = [];
+    const seenNames = new Set<string>();
+    const seenIds = new Set<string>();
+
+    (allFolders || []).forEach((f, idx) => {
+      const cleanName = (f.name || '').trim();
+      if (!cleanName || /^all(\s+folders|\s+photos)?$/i.test(cleanName)) return;
+      const lower = cleanName.toLowerCase();
+      if (!seenNames.has(lower) && !seenIds.has(f.id)) {
+        seenNames.add(lower);
+        seenIds.add(f.id);
+        result.push({ id: f.id, name: cleanName });
+      }
+    });
+
+    (allPhotos || []).forEach((p) => {
+      const rawName = (p.folderName || '').trim();
+      if (!rawName || /^all(\s+folders|\s+photos)?$/i.test(rawName)) return;
+      const lower = rawName.toLowerCase();
+      if (!seenNames.has(lower)) {
+        seenNames.add(lower);
+        const folderId = p.folderId && !seenIds.has(p.folderId) ? p.folderId : `fld-${lower.replace(/[^a-z0-9]/g, '-')}`;
+        seenIds.add(folderId);
+        result.push({ id: folderId, name: rawName });
+      }
+    });
+
+    return result;
+  }, [allFolders, allPhotos, activeEvent]);
 
   const selectedPhotos = allPhotos.filter((p) => p.isSelected);
   const totalPhotos = Math.max(activeEvent?.photosCount || 0, allPhotos.length);
@@ -191,6 +211,9 @@ export const SelectionResultsPage: React.FC = () => {
     return (
       <div className="max-w-4xl mx-auto px-4 py-16 text-center">
         <h2 className="text-xl font-bold text-white mb-2">No Event Selected</h2>
+        <p className="text-xs text-neutral-400 mb-6">
+          Kripya dashboard par jaakar event select karein.
+        </p>
         <button
           onClick={() => navigateTo('dashboard')}
           className="px-4 py-2 bg-neutral-800 text-white rounded-xl text-xs hover:bg-neutral-700 transition"

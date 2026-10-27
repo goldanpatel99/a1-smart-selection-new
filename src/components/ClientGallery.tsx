@@ -25,17 +25,22 @@ import {
   Instagram,
   PhoneCall,
   Image as ImageIcon,
+  AlertTriangle,
 } from 'lucide-react';
 import { DynamicSecurityWatermark } from './DynamicSecurityWatermark';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import { getClientGalleryUrl } from '../utils/domainConfig';
+import { idbStorage } from '../utils/idbStorage';
+import { firebaseService } from '../services/firebaseService';
+import { PhotoFolder } from '../types';
+import { getDeadlineMs, isEventExpired } from '../utils/deadline';
 
 export const ClientGallery: React.FC = () => {
   const {
     activeEvent,
-    users,
     togglePhotoSelection,
     submitClientSelection,
+    restoreClientSelections,
     showToast,
     navigateTo,
     refreshEventPhotos,
@@ -52,6 +57,13 @@ export const ClientGallery: React.FC = () => {
 
   // Offline Mode & Slow Network Auto-Saver
   const { isOnline, pendingCount, isSyncing, enqueuePhotoSync } = useOfflineSync(showToast);
+
+  // 30-Second Auto-Save Selection Progress to IndexedDB
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<Date | null>(null);
+  const [restoredCount, setRestoredCount] = useState<number | null>(null);
+
+  // High-volume performance: Lazy-load photos in batches of 60 to prevent browser memory freeze with 5,000 photos
+  const [visibleCount, setVisibleCount] = useState<number>(60);
 
   // Direct Cloud Sync state & handler
   const [isDirectSyncing, setIsDirectSyncing] = useState(false);
@@ -89,10 +101,87 @@ export const ClientGallery: React.FC = () => {
     return () => clearTimeout(timer);
   }, [activeEvent?.id, refreshEventPhotos]);
 
-  // Find photographer for 100% white-label branding
-  const photographer = activeEvent
-    ? users.find((u) => u.id === activeEvent.photographerId)
-    : undefined;
+  // 1. Auto-Restore selection progress from IndexedDB on initial mount if browser tab was closed
+  useEffect(() => {
+    if (!activeEvent?.id) return;
+    idbStorage.getSelectionProgress(activeEvent.id).then((saved) => {
+      if (saved && Array.isArray(saved.selectedPhotoIds)) {
+        restoreClientSelections(activeEvent.id, saved.selectedPhotoIds, saved.clientNotes);
+        if (saved.clientNotes && !clientNotes) {
+          setClientNotes(saved.clientNotes);
+        }
+        if (saved.selectedPhotoIds.length > 0) {
+          setRestoredCount(saved.selectedPhotoIds.length);
+        }
+        setLastAutoSavedAt(new Date(saved.lastSavedAt || Date.now()));
+      }
+    });
+  }, [activeEvent?.id, restoreClientSelections]);
+
+  // 2. Periodic 30-second Auto-Save to IndexedDB (failsafe against accidental tab close / phone battery drain)
+  useEffect(() => {
+    if (!activeEvent?.id || isSubmitted) return;
+
+    const performAutoSave = async () => {
+      const selectedIds = (activeEvent.photos || [])
+        .filter((p) => p.isSelected)
+        .map((p) => p.id);
+
+      await idbStorage.saveSelectionProgress(activeEvent.id, selectedIds, clientNotes);
+      setLastAutoSavedAt(new Date());
+    };
+
+    // Auto-save exactly every 30 seconds
+    const interval = setInterval(performAutoSave, 30000);
+
+    // Also auto-save immediately on beforeunload/pagehide
+    const handleImmediateSave = () => {
+      const selectedIds = (activeEvent.photos || [])
+        .filter((p) => p.isSelected)
+        .map((p) => p.id);
+      idbStorage.saveSelectionProgress(activeEvent.id, selectedIds, clientNotes);
+    };
+
+    window.addEventListener('beforeunload', handleImmediateSave);
+    window.addEventListener('pagehide', handleImmediateSave);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', handleImmediateSave);
+      window.removeEventListener('pagehide', handleImmediateSave);
+    };
+  }, [activeEvent?.id, activeEvent?.photos, clientNotes, isSubmitted]);
+
+  // 3. Real-Time Cross-Device Live Selection onSnapshot Mirror (<200ms latency without reload!)
+  useEffect(() => {
+    if (!activeEvent?.id) return;
+    const unsub = firebaseService.subscribeLiveSelection(activeEvent.id, (payload) => {
+      if (!payload || !Array.isArray(payload.selectedPhotoIds)) return;
+      restoreClientSelections(activeEvent.id, payload.selectedPhotoIds, payload.clientNotes, payload.deviceId, payload.rev);
+      if (payload.clientNotes !== undefined) {
+        setClientNotes(payload.clientNotes);
+      }
+    });
+    return () => unsub();
+  }, [activeEvent?.id, restoreClientSelections]);
+
+  // Reset lazy load count on folder/filter change
+  useEffect(() => {
+    setVisibleCount(60);
+  }, [activeFolderId, filterMode]);
+
+  // Denormalized Studio Branding from Event doc (No users collection read needed for anonymous client)
+  const studioBranding = useMemo(() => {
+    return {
+      name: activeEvent?.studio?.name || activeEvent?.studioName || 'Studio',
+      logoUrl: activeEvent?.studio?.logoUrl || activeEvent?.studioLogoUrl,
+      whatsapp: activeEvent?.studio?.whatsapp || activeEvent?.studioPhone || activeEvent?.clientPhone || '',
+      phone: activeEvent?.studio?.phone || activeEvent?.studioPhone || '',
+      tagline: activeEvent?.studio?.tagline || 'Luxury Wedding Stories & Timeless Cinematic Films',
+      instagram: activeEvent?.studio?.instagram || '',
+      address: activeEvent?.studio?.address || '',
+    };
+  }, [activeEvent]);
 
   useEffect(() => {
     if (activeEvent?.status === 'completed') {
@@ -134,16 +223,47 @@ export const ClientGallery: React.FC = () => {
   const allFolders = activeEvent?.folders || [];
 
   const effectiveFolders = useMemo(() => {
-    if (allFolders.length > 0) return allFolders;
-    if (allPhotos.length === 0) return [];
-    const folderNames = Array.from(new Set(allPhotos.map((p) => (p.folderName || 'Photos').trim())));
-    return folderNames.map((name, idx) => ({
-      id: `fld-auto-${idx}-${name.toLowerCase().replace(/\s+/g, '-')}`,
-      name,
-      visible: true,
-      order: idx,
-    }));
-  }, [allFolders, allPhotos]);
+    if (!activeEvent) return [];
+
+    const result: PhotoFolder[] = [];
+    const seenNames = new Set<string>();
+    const seenIds = new Set<string>();
+
+    (allFolders || []).forEach((f, idx) => {
+      const cleanName = (f.name || '').trim();
+      if (!cleanName || /^all(\s+folders|\s+photos)?$/i.test(cleanName)) return;
+      const lower = cleanName.toLowerCase();
+      if (!seenNames.has(lower) && !seenIds.has(f.id)) {
+        seenNames.add(lower);
+        seenIds.add(f.id);
+        result.push({
+          id: f.id,
+          name: cleanName,
+          visible: f.visible !== false,
+          order: f.order !== undefined ? f.order : idx,
+        });
+      }
+    });
+
+    (allPhotos || []).forEach((p) => {
+      const rawName = (p.folderName || '').trim();
+      if (!rawName || /^all(\s+folders|\s+photos)?$/i.test(rawName)) return;
+      const lower = rawName.toLowerCase();
+      if (!seenNames.has(lower)) {
+        seenNames.add(lower);
+        const folderId = p.folderId && !seenIds.has(p.folderId) ? p.folderId : `fld-${lower.replace(/[^a-z0-9]/g, '-')}`;
+        seenIds.add(folderId);
+        result.push({
+          id: folderId,
+          name: rawName,
+          visible: true,
+          order: result.length,
+        });
+      }
+    });
+
+    return result;
+  }, [allFolders, allPhotos, activeEvent]);
 
   const visibleFolders = effectiveFolders.filter((f) => f.visible !== false);
 
@@ -164,6 +284,11 @@ export const ClientGallery: React.FC = () => {
     });
   }, [allPhotos, activeFolderId, filterMode, visibleFolders]);
 
+  // Displayed slice for 5k-photo seamless 60fps rendering without DOM bloating
+  const displayedPhotos = useMemo(() => {
+    return filteredPhotos.slice(0, visibleCount);
+  }, [filteredPhotos, visibleCount]);
+
   const selectedCount = allPhotos.filter((p) => p.isSelected).length;
   const maxLimit = activeEvent?.maxSelectionLimit;
   const isLimitReached = !!maxLimit && selectedCount >= maxLimit;
@@ -181,29 +306,31 @@ export const ClientGallery: React.FC = () => {
     seconds: number;
     isExpired: boolean;
   }>(() => {
-    if (!activeEvent?.deadlineDate) {
+    if (!activeEvent) {
       return { days: 0, hours: 0, minutes: 0, seconds: 0, isExpired: false };
     }
-    const deadlineTime = new Date(`${activeEvent.deadlineDate}T23:59:59`).getTime();
+    const deadlineTime = getDeadlineMs(activeEvent);
     const now = Date.now();
     const diff = Math.max(0, deadlineTime - now);
+    const expired = isEventExpired(activeEvent);
     return {
       days: Math.floor(diff / (1000 * 60 * 60 * 24)),
       hours: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
       minutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
       seconds: Math.floor((diff % (1000 * 60)) / 1000),
-      isExpired: diff <= 0,
+      isExpired: expired,
     };
   });
 
   useEffect(() => {
-    if (!activeEvent?.deadlineDate) return;
+    if (!activeEvent) return;
     const tick = () => {
-      const deadlineTime = new Date(`${activeEvent.deadlineDate}T23:59:59`).getTime();
+      const deadlineTime = getDeadlineMs(activeEvent);
       const now = Date.now();
       const diff = deadlineTime - now;
+      const expired = isEventExpired(activeEvent);
 
-      if (diff <= 0) {
+      if (expired || diff <= 0) {
         setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, isExpired: true });
         return;
       }
@@ -220,7 +347,7 @@ export const ClientGallery: React.FC = () => {
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [activeEvent?.deadlineDate]);
+  }, [activeEvent]);
 
   // Keyboard navigation for Lightbox
   useEffect(() => {
@@ -235,6 +362,7 @@ export const ClientGallery: React.FC = () => {
         setLightboxIndex(lightboxIndex - 1);
       }
       if (e.key === ' ' || e.key === 'h' || e.key === 'H') {
+        if (timeLeft.isExpired || isSubmitted) return;
         const photo = filteredPhotos[lightboxIndex];
         if (photo) {
           togglePhotoSelection(activeEvent.id, photo.id);
@@ -243,7 +371,7 @@ export const ClientGallery: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxIndex, filteredPhotos, activeEvent?.id, togglePhotoSelection]);
+  }, [lightboxIndex, filteredPhotos, activeEvent?.id, togglePhotoSelection, timeLeft.isExpired, isSubmitted]);
 
   const handleFinishSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -258,7 +386,7 @@ export const ClientGallery: React.FC = () => {
     const text = encodeURIComponent(
       `Namaste! Humne "${activeEvent.title}" ke photos ki selection complete kar li hai (Total: ${selectedCount} photos selected).\n\nNotes: ${clientNotes || 'Sabhi selected photos album ke liye final hain.'}\n\nKripya check karke confirmation dein. Dhanyawaad!`
     );
-    const targetPhone = (activeEvent.studioPhone || activeEvent.clientPhone || '').replace(/[^0-9]/g, '');
+    const targetPhone = (studioBranding.whatsapp || studioBranding.phone || activeEvent.clientPhone || '').replace(/[^0-9]/g, '');
     const waUrl = targetPhone ? `https://wa.me/${targetPhone}?text=${text}` : `https://wa.me/?text=${text}`;
     window.open(waUrl, '_blank', 'noopener,noreferrer');
   };
@@ -291,6 +419,8 @@ export const ClientGallery: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [activeEvent]);
+
+
 
   if (!activeEvent) {
     if (!loadTimeout) {
@@ -504,6 +634,15 @@ export const ClientGallery: React.FC = () => {
               )}
             </div>
 
+            {/* 30-Second IndexedDB Auto-Save Status Pill */}
+            <div
+              className="px-2.5 py-1.5 rounded-xl text-[11px] font-mono flex items-center gap-1.5 bg-neutral-900 border border-emerald-500/30 text-emerald-300 transition-all shadow-sm"
+              title="Selection progress is auto-saved to device IndexedDB every 30 seconds"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden lg:inline font-sans font-medium">Auto-saved (30s)</span>
+            </div>
+
             <button
               onClick={handleDirectSync}
               disabled={isDirectSyncing}
@@ -533,15 +672,30 @@ export const ClientGallery: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setShowFinishModal(true)}
+              onClick={() => {
+                if (timeLeft.isExpired) {
+                  showToast('Event selection deadline expire ho chuki hai!', 'error');
+                  return;
+                }
+                setShowFinishModal(true);
+              }}
+              disabled={isSubmitted || timeLeft.isExpired}
               className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-all ${
                 isSubmitted
-                  ? 'bg-emerald-600 text-white'
+                  ? 'bg-emerald-600 text-white cursor-default'
+                  : timeLeft.isExpired
+                  ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-60'
                   : 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 hover:from-amber-400 hover:to-amber-200 text-neutral-950 shadow-amber-500/20 hover:scale-105'
               }`}
             >
               <Check className="w-4 h-4 stroke-[3]" />
-              <span>{isSubmitted ? '✓ Selection Finished' : 'Finish & Submit'}</span>
+              <span>
+                {isSubmitted
+                  ? '✓ Selection Finished'
+                  : timeLeft.isExpired
+                  ? '⚠️ Event Expired'
+                  : 'Finish & Submit'}
+              </span>
             </button>
           </div>
         </div>
@@ -692,14 +846,34 @@ export const ClientGallery: React.FC = () => {
             </div>
           )
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4 my-6">
-            {filteredPhotos.map((photo, index) => {
-              const isSelected = photo.isSelected;
+          <div>
+            {/* Restored Draft Banner if recovered from IndexedDB */}
+            {restoredCount !== null && restoredCount > 0 && (
+              <div className="flex items-center justify-between px-4 py-2.5 mb-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs text-emerald-300 animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  <span>
+                    ✓ Tab recover hone par aapke <strong>{restoredCount} selected photos</strong> device IndexedDB se automatically restore ho gaye hain!
+                  </span>
+                </div>
+                <button
+                  onClick={() => setRestoredCount(null)}
+                  className="text-neutral-400 hover:text-white text-xs px-2 py-0.5"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4 my-6">
+              {displayedPhotos.map((photo) => {
+                const isSelected = photo.isSelected;
+                const actualIndex = filteredPhotos.findIndex((p) => p.id === photo.id);
 
               return (
                 <div
                   key={photo.id}
-                  onClick={() => setLightboxIndex(index)}
+                  onClick={() => setLightboxIndex(actualIndex >= 0 ? actualIndex : 0)}
                   className={`group relative rounded-2xl overflow-hidden aspect-[4/5] bg-neutral-900 border-2 select-none cursor-pointer transition-all duration-200 ${
                     isSelected
                       ? 'border-rose-500 ring-2 ring-rose-500/30 shadow-lg shadow-rose-500/10'
@@ -725,12 +899,10 @@ export const ClientGallery: React.FC = () => {
                   )}
 
                   {/* Studio Logo Watermark in Bottom-Right Corner Only */}
-                  {photographer?.enableAntiScreenshot !== false && (
-                    <DynamicSecurityWatermark
-                      studioName={activeEvent.studioName}
-                      clientPhone={activeEvent.clientPhone}
-                    />
-                  )}
+                  <DynamicSecurityWatermark
+                    studioName={studioBranding.name}
+                    clientPhone={activeEvent.clientPhone}
+                  />
 
                   {/* Gradient shadow */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
@@ -743,8 +915,13 @@ export const ClientGallery: React.FC = () => {
                   {/* Big Heart Tap Button */}
                   <button
                     type="button"
+                    disabled={timeLeft.isExpired || isSubmitted}
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (timeLeft.isExpired) {
+                        showToast('Event selection deadline expire ho chuki hai!', 'error');
+                        return;
+                      }
                       togglePhotoSelection(activeEvent.id, photo.id);
                       enqueuePhotoSync(activeEvent.id, photo.id, {
                         isSelected: !photo.isSelected,
@@ -752,7 +929,9 @@ export const ClientGallery: React.FC = () => {
                       });
                     }}
                     className={`absolute top-2 right-2 w-10 h-10 rounded-full flex items-center justify-center transition-all z-20 ${
-                      isSelected
+                      timeLeft.isExpired || isSubmitted
+                        ? 'bg-neutral-800/80 text-neutral-500 cursor-not-allowed opacity-60'
+                        : isSelected
                         ? 'bg-rose-500 text-white scale-110 shadow-lg shadow-rose-500/50'
                         : 'bg-black/60 text-white hover:bg-black/80 hover:scale-110'
                     }`}
@@ -764,18 +943,18 @@ export const ClientGallery: React.FC = () => {
                     />
                   </button>
 
-                  {/* Fullscreen icon */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setLightboxIndex(index);
-                    }}
-                    className="absolute bottom-10 right-2 p-1.5 rounded-lg bg-black/60 text-white opacity-0 group-hover:opacity-100 hover:bg-black/80 transition-all z-20"
-                    title="Zoom Fullscreen"
-                  >
-                    <Maximize2 className="w-3.5 h-3.5" />
-                  </button>
+                    {/* Fullscreen icon */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLightboxIndex(actualIndex >= 0 ? actualIndex : 0);
+                      }}
+                      className="absolute bottom-10 right-2 p-1.5 rounded-lg bg-black/60 text-white opacity-0 group-hover:opacity-100 hover:bg-black/80 transition-all z-20"
+                      title="Zoom Fullscreen"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </button>
 
                   {/* Filename footer */}
                   <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
@@ -786,11 +965,31 @@ export const ClientGallery: React.FC = () => {
                       <span className="text-[10px] text-rose-400 font-bold whitespace-nowrap">
                         ✓ Selected
                       </span>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+
+            {/* Load More Button for 5,000 photos smooth infinite browsing */}
+            {filteredPhotos.length > displayedPhotos.length && (
+              <div className="flex flex-col items-center justify-center py-6 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount((prev) => prev + 60)}
+                  className="px-6 py-3 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-amber-300 hover:text-amber-200 border border-neutral-800 hover:border-amber-500/40 text-xs font-bold transition shadow-lg flex items-center gap-2 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span>
+                    Load More Photos ({filteredPhotos.length - displayedPhotos.length} remaining of {filteredPhotos.length})
+                  </span>
+                </button>
+                <span className="text-[11px] text-neutral-500 font-mono">
+                  Showing {displayedPhotos.length} of {filteredPhotos.length} photos
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -887,12 +1086,10 @@ export const ClientGallery: React.FC = () => {
               )}
 
               {/* Clean Studio Watermark in Bottom-Right Corner Only */}
-              {photographer?.enableAntiScreenshot !== false && (
-                <DynamicSecurityWatermark
-                  studioName={activeEvent.studioName}
-                  clientPhone={activeEvent.clientPhone}
-                />
-              )}
+              <DynamicSecurityWatermark
+                studioName={studioBranding.name}
+                clientPhone={activeEvent.clientPhone}
+              />
             </div>
 
             {/* Next arrow (Desktop & Tablet) */}
@@ -922,11 +1119,18 @@ export const ClientGallery: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() =>
-                  togglePhotoSelection(activeEvent.id, filteredPhotos[lightboxIndex].id)
-                }
+                disabled={timeLeft.isExpired || isSubmitted}
+                onClick={() => {
+                  if (timeLeft.isExpired) {
+                    showToast('Event selection deadline expire ho chuki hai!', 'error');
+                    return;
+                  }
+                  togglePhotoSelection(activeEvent.id, filteredPhotos[lightboxIndex].id);
+                }}
                 className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
-                  filteredPhotos[lightboxIndex].isSelected
+                  timeLeft.isExpired || isSubmitted
+                    ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-60'
+                    : filteredPhotos[lightboxIndex].isSelected
                     ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/50'
                     : 'bg-neutral-800 hover:bg-neutral-700 text-white'
                 }`}
@@ -970,6 +1174,9 @@ export const ClientGallery: React.FC = () => {
             </div>
             <div className="text-[10px] text-amber-300 font-mono">
               ~{estimatedSheets} Sheets ({estimatedPages} Pages)
+            </div>
+            <div className="text-[9px] text-emerald-400 font-mono flex items-center gap-1">
+              <ShieldCheck className="w-3 h-3" /> Auto-saved (30s)
             </div>
           </div>
         </div>
@@ -1104,14 +1311,14 @@ export const ClientGallery: React.FC = () => {
 
           <div>
             <h2 className="text-xl sm:text-2xl font-extrabold font-heading text-white tracking-wide">
-              {activeEvent.studioName}
+              {studioBranding.name}
             </h2>
             <p className="text-xs text-neutral-400 mt-1 max-w-md mx-auto">
-              {photographer?.studioTagline || 'Luxury Wedding Stories & Timeless Cinematic Films'}
+              {studioBranding.tagline}
             </p>
-            {photographer?.studioAddress && (
+            {studioBranding.address && (
               <p className="text-[11px] text-neutral-500 mt-1 font-mono">
-                📍 {photographer.studioAddress}
+                📍 {studioBranding.address}
               </p>
             )}
           </div>
@@ -1119,33 +1326,33 @@ export const ClientGallery: React.FC = () => {
           {/* Word-of-mouth & Wedding Guest Inquiry Buttons */}
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <a
-              href={`https://wa.me/${(photographer?.studioBookingPhone || activeEvent.clientPhone || '').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                `Hello ${activeEvent.studioName}, I viewed the wedding gallery of ${activeEvent.coupleName} on your portal and would like to inquire about wedding photography packages.`
+              href={`https://wa.me/${(studioBranding.whatsapp || studioBranding.phone || activeEvent.clientPhone || '').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                `Hello ${studioBranding.name}, I viewed the wedding gallery of ${activeEvent.coupleName} on your portal and would like to inquire about wedding photography packages.`
               )}`}
               target="_blank"
               rel="noreferrer"
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-2 transition-all hover:scale-105"
             >
               <MessageCircle className="w-3.5 h-3.5" />
-              <span>Book {activeEvent.studioName} on WhatsApp</span>
+              <span>Book {studioBranding.name} on WhatsApp</span>
             </a>
 
-            {photographer?.studioInstagram && (
+            {studioBranding.instagram && (
               <a
-                href={`https://instagram.com/${photographer.studioInstagram.replace('@', '')}`}
+                href={`https://instagram.com/${studioBranding.instagram.replace('@', '')}`}
                 target="_blank"
                 rel="noreferrer"
                 className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white font-semibold text-xs rounded-xl flex items-center gap-2 transition-colors"
               >
                 <Instagram className="w-3.5 h-3.5 text-pink-400" />
-                <span>Follow {photographer.studioInstagram}</span>
+                <span>Follow {studioBranding.instagram}</span>
               </a>
             )}
           </div>
 
           <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-400 pt-4 border-t border-neutral-900 font-mono">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Private & Confidential Selection Gallery • Copyright © {new Date().getFullYear()} {activeEvent.studioName}</span>
+            <span>Private & Confidential Selection Gallery • Copyright © {new Date().getFullYear()} {studioBranding.name}</span>
           </div>
         </div>
       </footer>

@@ -31,12 +31,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const {
     currentUser,
-    users,
     currentView,
     navigateTo,
     logout,
-    switchUser,
-    events,
   } = useApp();
 
   const [showUserDropdown, setShowUserDropdown] = useState(false);

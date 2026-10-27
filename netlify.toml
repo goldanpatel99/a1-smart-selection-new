@@ -1,6 +1,27 @@
 [build]
   publish = "dist"
   command = "npm run build"
+  functions = "netlify/functions"
+
+[functions."auto-delete-expired"]
+  schedule = "@daily"
+
+[[redirects]]
+  from = "/api/auto-delete-expired"
+  to = "/index.html"
+  status = 403
+  force = true
+
+[[redirects]]
+  from = "/.netlify/functions/auto-delete-expired"
+  to = "/index.html"
+  status = 403
+  force = true
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
 
 [[redirects]]
   from = "/*"

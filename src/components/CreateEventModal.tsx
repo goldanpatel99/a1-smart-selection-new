@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Sliders,
   Zap,
+  Loader2,
 } from 'lucide-react';
 import { PointTier } from '../types';
 
@@ -53,6 +54,8 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [photosPerSheet, setPhotosPerSheet] = useState<number>(
     currentUser?.defaultPhotosPerSheet || 6
   );
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -62,31 +65,39 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     selectedTier === 'premium' ? hasPremiumPoints : hasStandardPoints;
   const hasAnyPoints = stdBalance > 0 || prmBalance > 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !coupleName.trim()) return;
 
-    const res = createEvent({
-      title: title.trim(),
-      coupleName: coupleName.trim(),
-      clientPhone: clientPhone.trim() || undefined,
-      clientEmail: clientEmail.trim() || undefined,
-      eventDate,
-      deadlineDays: Number(deadlineDays),
-      maxSelectionLimit: limitEnabled ? Number(maxSelectionLimit) : undefined,
-      photosPerSheet: Number(photosPerSheet) || 6,
-      pointTier: selectedTier,
-    });
+    setIsCreating(true);
+    setCreateError(null);
 
-    if (res.success && res.eventId) {
-      setTitle('');
-      setCoupleName('');
-      setClientPhone('');
-      setClientEmail('');
-      setLimitEnabled(false);
-      onClose();
-      // Jump straight to upload photos page
-      navigateTo('photo-upload', res.eventId);
+    try {
+      const res = await createEvent({
+        title: title.trim(),
+        coupleName: coupleName.trim(),
+        clientPhone: clientPhone.trim() || undefined,
+        clientEmail: clientEmail.trim() || undefined,
+        eventDate,
+        deadlineDays: Number(deadlineDays),
+        maxSelectionLimit: limitEnabled ? Number(maxSelectionLimit) : undefined,
+        photosPerSheet: Number(photosPerSheet) || 6,
+        pointTier: selectedTier,
+      });
+
+      if (res.success && res.eventId) {
+        setTitle('');
+        setCoupleName('');
+        setClientPhone('');
+        setClientEmail('');
+        setLimitEnabled(false);
+        onClose();
+        navigateTo('photo-upload', res.eventId);
+      } else if (res.error) {
+        setCreateError(res.error);
+      }
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -382,12 +393,26 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               </div>
             </div>
 
+            {createError && (
+              <div className="mt-2 p-3 bg-rose-950/50 border border-rose-500/40 rounded-xl text-xs text-rose-200">
+                {createError}
+              </div>
+            )}
+
             {/* Bottom Button - Strictly: Create Event & Upload Photos */}
             <button
               type="submit"
-              className="w-full mt-3 py-3.5 px-4 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 hover:from-amber-400 hover:to-amber-200 text-neutral-950 font-extrabold text-sm rounded-xl shadow-lg shadow-amber-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2"
+              disabled={isCreating}
+              className="w-full mt-3 py-3.5 px-4 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 hover:from-amber-400 hover:to-amber-200 text-neutral-950 font-extrabold text-sm rounded-xl shadow-lg shadow-amber-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <span>Create Event & Upload Photos</span>
+              {isCreating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Creating Event on Server...</span>
+                </>
+              ) : (
+                <span>Create Event & Upload Photos</span>
+              )}
             </button>
           </form>
         )}

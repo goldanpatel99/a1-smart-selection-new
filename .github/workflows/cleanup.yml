@@ -1,0 +1,40 @@
+name: 40-Day Event Retention Cleanup
+
+on:
+  schedule:
+    # Runs daily at 02:00 UTC (07:30 IST)
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  retention-cleanup:
+    name: Run Retention Cleanup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Cleanup Endpoint
+        run: |
+          if [ -z "${{ vars.APP_URL }}" ]; then
+            echo "Error: Repository variable APP_URL is not defined in GitHub Settings -> Secrets and variables -> Actions -> Variables."
+            exit 1
+          fi
+          if [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "Error: Repository secret CRON_SECRET is not defined in GitHub Settings -> Secrets and variables -> Actions -> Secrets."
+            exit 1
+          fi
+
+          CLEANUP_URL="${{ vars.APP_URL }}/api/cleanup-manual"
+          echo "Triggering retention cleanup at: ${CLEANUP_URL}"
+
+          HTTP_CODE=$(curl -s -o response.json -w "%{http_code}" -X POST "${CLEANUP_URL}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json")
+
+          echo "Response HTTP Code: ${HTTP_CODE}"
+          echo "Response Body:"
+          cat response.json
+          echo ""
+
+          if [ "${HTTP_CODE}" -ne 200 ]; then
+            echo "Error: Cleanup endpoint returned failure status ${HTTP_CODE}"
+            exit 1
+          fi

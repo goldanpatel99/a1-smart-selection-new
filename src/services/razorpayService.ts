@@ -1,8 +1,10 @@
 /**
- * Seamless, Lag-Free Razorpay Integration Service
- * With dual-mode resilience: Server-side Order API + Client-side Direct Gateway Fallback.
- * Ensures the payment modal NEVER fails with 404 errors.
+ * Razorpay Integration Service
+ * Read keys only from server order response or import.meta.env.VITE_RAZORPAY_KEY_ID.
+ * Strictly zero hardcoded keys or secrets.
  */
+
+import { auth } from '../firebase';
 
 declare global {
   interface Window {
@@ -24,8 +26,6 @@ export interface PaymentVerificationResponse {
   paymentId?: string;
 }
 
-const DEFAULT_RAZORPAY_KEY_ID = 'rzp_live_TkG9ETDfzpFIgr';
-
 export const razorpayService = {
   /**
    * Ensure Razorpay checkout script is loaded
@@ -45,7 +45,7 @@ export const razorpayService = {
   },
 
   /**
-   * Create order via backend API (gracefully handles 404 without throwing)
+   * Create order via backend API (server/Netlify function) with Firebase ID token
    */
   async createOrder(params: {
     amountRupees: number;
@@ -56,49 +56,66 @@ export const razorpayService = {
     studioName?: string;
   }): Promise<RazorpayOrderResponse | null> {
     try {
-      const res = await fetch('/api/razorpay/create-order', {
+      const token = await auth.currentUser?.getIdToken().catch(() => null);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/create-order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(params),
       });
 
       if (res.ok) {
         return await res.json();
       }
-      console.warn(`Backend /api/razorpay/create-order returned ${res.status}. Falling back to direct Razorpay checkout.`);
+      const errData = await res.json().catch(() => ({}));
+      console.warn('Backend /api/create-order returned error:', errData);
       return null;
     } catch (err) {
-      console.warn('Network issue reaching /api/razorpay/create-order. Falling back to direct Razorpay checkout.', err);
+      console.warn('Network issue reaching /api/create-order:', err);
       return null;
     }
   },
 
   /**
-   * Verify cryptographic payment signature via backend API
+   * Verify cryptographic payment signature via server API
    */
   async verifyPayment(params: {
     razorpay_order_id: string;
     razorpay_payment_id: string;
     razorpay_signature: string;
+    points?: number;
+    packageId?: string;
+    tier?: string;
   }): Promise<PaymentVerificationResponse> {
     try {
-      const res = await fetch('/api/razorpay/verify-payment', {
+      const token = await auth.currentUser?.getIdToken().catch(() => null);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/verify-payment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(params),
       });
 
       if (res.ok) {
         return await res.json();
       }
-      return { success: false, error: `Verification endpoint returned ${res.status}` };
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err?.error || `Verification endpoint returned ${res.status}` };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Verification network failure' };
     }
   },
 
   /**
-   * Start 1-Click Razorpay Payment Checkout (Guaranteed 0-Error Modal Launch)
+   * Start 1-Click Razorpay Payment Checkout
    */
   async startCheckout(options: {
     amountRupees: number;
@@ -130,7 +147,14 @@ export const razorpayService = {
         studioName: options.studioName,
       });
 
-      const activeKey = order?.keyId || DEFAULT_RAZORPAY_KEY_ID;
+      const envKey = (import.meta.env.VITE_RAZORPAY_KEY_ID as string) || '';
+      const activeKey = order?.keyId || envKey;
+
+      if (!activeKey) {
+        options.onError('Razorpay Key ID is not configured. Please set RAZORPAY_KEY_ID in your environment variables.');
+        return;
+      }
+
       const activeAmount = order?.amount || Math.round(options.amountRupees * 100);
       const activeCurrency = order?.currency || 'INR';
 
@@ -149,64 +173,63 @@ export const razorpayService = {
         notes: {
           packageId: options.packageId,
           points: String(options.points),
+          userId: options.userId,
           studioName: options.studioName || '',
         },
         theme: {
-          color: '#f59e0b', // Luxury Golden Amber
-        },
-        modal: {
-          confirm_close: true,
-          ondismiss: () => {
-            console.log('Payment modal dismissed by user');
-          },
+          color: '#f59e0b', // Amber-500 matching studio theme
         },
         handler: async (response: {
           razorpay_payment_id: string;
           razorpay_order_id?: string;
           razorpay_signature?: string;
         }) => {
-          // If order_id & signature exist, verify cryptographically with backend
-          if (response.razorpay_order_id && response.razorpay_signature) {
-            try {
-              const verification = await razorpayService.verifyPayment({
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-              });
+          const paymentId = response.razorpay_payment_id;
+          const orderId = response.razorpay_order_id || order?.orderId || `ord_${Date.now()}`;
 
-              if (verification.success) {
-                options.onSuccess(response.razorpay_payment_id, response.razorpay_order_id);
-                return;
-              }
-            } catch (err) {
-              console.warn('Backend signature check skipped, relying on payment ID confirmation', err);
+          // Verify signature on server if signature provided
+          if (response.razorpay_signature) {
+            const verification = await this.verifyPayment({
+              razorpay_order_id: orderId,
+              razorpay_payment_id: paymentId,
+              razorpay_signature: response.razorpay_signature,
+              points: options.points,
+              packageId: options.packageId,
+            });
+
+            if (!verification.success) {
+              console.warn('Payment verification issue:', verification.error);
+              options.onError(verification.error || 'Payment verification failed.');
+              return;
             }
           }
 
-          // Confirmed payment ID from Razorpay SDK
-          if (response.razorpay_payment_id && response.razorpay_payment_id.startsWith('pay_')) {
-            options.onSuccess(response.razorpay_payment_id, response.razorpay_order_id || 'direct_pay');
-          } else {
-            options.onError('Payment receipt could not be verified.');
-          }
+          options.onSuccess(paymentId, orderId);
+        },
+        modal: {
+          ondismiss: () => {
+            options.onError('Payment window was closed by the user.');
+          },
+          escape: true,
+          backdropclose: false,
         },
       };
 
-      // If backend order creation succeeded, attach order_id
       if (order?.orderId) {
         rzpOptions.order_id = order.orderId;
       }
 
-      const paymentObject = new window.Razorpay(rzpOptions);
+      const rzp = new window.Razorpay(rzpOptions);
 
-      paymentObject.on('payment.failed', (response: any) => {
-        const errorDesc = response.error?.description || response.error?.reason || 'Payment failed';
-        options.onError(`Payment Failed: ${errorDesc}`);
+      rzp.on('payment.failed', (resp: any) => {
+        const desc = resp.error?.description || resp.error?.reason || 'Transaction could not be completed.';
+        options.onError(`Payment Failed: ${desc}`);
       });
 
-      paymentObject.open();
+      rzp.open();
     } catch (err: any) {
-      options.onError(err?.message || 'Unable to initiate payment with Razorpay');
+      console.error('Razorpay Checkout error:', err);
+      options.onError(err?.message || 'Failed to initiate payment gateway.');
     }
   },
 };

@@ -13,7 +13,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   initialMode = 'login',
 }) => {
-  const { login, signup, showToast } = useApp();
+  const { login, signup, showToast, forgotPassword } = useApp();
   const [mode, setMode] = useState<'login' | 'signup' | 'admin'>(initialMode);
 
   // Form states - all strictly mandatory for signup
@@ -23,39 +23,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [studioName, setStudioName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
-    if (mode === 'signup') {
-      if (!name.trim() || !email.trim() || !studioName.trim() || !phone.trim() || !password.trim()) {
-        showToast('Sabhi fields bharna anivarya (mandatory) hai!', 'error');
-        return;
+    setIsSubmitting(true);
+    try {
+      if (mode === 'signup') {
+        if (!name.trim() || !email.trim() || !studioName.trim() || !phone.trim() || !password.trim()) {
+          showToast('Sabhi fields bharna anivarya (mandatory) hai!', 'error');
+          return;
+        }
+        const success = await signup({
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+          studioName: studioName.trim(),
+          password: password.trim(),
+        });
+        if (success) onClose();
+      } else if (mode === 'admin') {
+        if (!email.trim() || !password.trim()) {
+          showToast('Admin ID aur Password enter karein!', 'error');
+          return;
+        }
+        const success = await login(email.trim(), 'admin', password.trim());
+        if (success) onClose();
+      } else {
+        if (!email.trim() || !password.trim()) {
+          showToast('Photographer ID aur Password enter karein!', 'error');
+          return;
+        }
+        const success = await login(email.trim(), 'photographer', password.trim());
+        if (success) onClose();
       }
-      const success = signup({
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        studioName: studioName.trim(),
-        password: password.trim(),
-      });
-      if (success) onClose();
-    } else if (mode === 'admin') {
-      if (!email.trim() || !password.trim()) {
-        showToast('Admin ID aur Password enter karein!', 'error');
-        return;
-      }
-      const success = login(email.trim(), 'admin', password.trim());
-      if (success) onClose();
-    } else {
-      if (!email.trim() || !password.trim()) {
-        showToast('Photographer ID aur Password enter karein!', 'error');
-        return;
-      }
-      const success = login(email.trim(), 'photographer', password.trim());
-      if (success) onClose();
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -223,13 +230,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           </div>
 
+          {mode === 'login' && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!email.trim()) {
+                    showToast('Kripya pehle upar apna Email Address enter karein!', 'info');
+                    return;
+                  }
+                  await forgotPassword(email.trim());
+                }}
+                className="text-[11px] text-amber-400 hover:text-amber-300 transition-colors"
+              >
+                Forgot Password?
+              </button>
+            </div>
+          )}
+
           <button
             type="submit"
-            className="w-full mt-3 py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-neutral-950 font-bold text-sm rounded-xl shadow-lg shadow-amber-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+            disabled={isSubmitting}
+            className="w-full mt-3 py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 disabled:opacity-50 text-neutral-950 font-bold text-sm rounded-xl shadow-lg shadow-amber-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
           >
-            {mode === 'signup' && 'Create Studio Account'}
-            {mode === 'login' && 'Sign In to Studio'}
-            {mode === 'admin' && 'Enter Admin Dashboard'}
+            {isSubmitting ? 'Please wait...' : (
+              <>
+                {mode === 'signup' && 'Create Studio Account'}
+                {mode === 'login' && 'Sign In to Studio'}
+                {mode === 'admin' && 'Enter Admin Dashboard'}
+              </>
+            )}
           </button>
         </form>
       </div>

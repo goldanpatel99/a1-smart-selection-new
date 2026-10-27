@@ -1,18 +1,33 @@
 export type PointTier = 'standard' | 'premium';
 
+export type PhotoSyncStatus = 'local' | 'uploading' | 'synced' | 'failed';
+
+export function isRemoteUrl(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('blob:') || trimmed.startsWith('data:')) return false;
+  return /^https?:\/\//i.test(trimmed);
+}
+
 export interface Photo {
-  id: string;
+  id: string; // client-generated crypto.randomUUID()
   filename: string;
   originalName: string;
   folderId: string;
   folderName: string;
-  url: string; // compressed preview data URL or hosted URL
-  thumbnailUrl?: string;
+  url: string; // remote HTTPS URL, or empty if local-only
+  thumbnailUrl?: string; // remote HTTPS URL, or empty if local-only
   sizeBytes?: number;
   isSelected: boolean;
   selectedAt?: string;
   clientComment?: string;
   uploadedAt: string;
+  eventId?: string;
+  r2Key?: string;
+  r2ThumbKey?: string;
+  width?: number;
+  height?: number;
+  syncStatus?: PhotoSyncStatus; // Local-only state: 'local' | 'uploading' | 'synced' | 'failed'
 }
 
 export interface PhotoFolder {
@@ -32,7 +47,7 @@ export interface WeddingEvent {
   photographerId: string;
   photographerEmail?: string;
   studioName: string;
-  status: 'draft' | 'active' | 'completed' | 'expired';
+  status: 'draft' | 'active' | 'completed' | 'expired' | 'locked';
   eventDate: string;
   deadlineDate: string;
   maxSelectionLimit?: number; // e.g. 100 photos, or undefined for unlimited
@@ -55,9 +70,38 @@ export interface WeddingEvent {
   studioInstagram?: string;
   studioAddress?: string;
   studioTagline?: string;
+  watermarkText?: string;
+  studio?: {
+    name?: string;
+    logoUrl?: string;
+    whatsapp?: string;
+    phone?: string;
+    watermarkText?: string;
+    tagline?: string;
+    instagram?: string;
+    address?: string;
+  };
+  deadlineAt?: string;
   // Tier & photo limit
   pointTier?: PointTier; // 'standard' (2,500 photos) | 'premium' (5,000 photos)
   maxPhotoCapacity?: number; // 2500 or 5000
+  // Permanent deletion tombstones (prevents deleted photos & folders from resurrecting)
+  deletedPhotoIds?: string[];
+  deletedFolderNames?: string[];
+  // Event tombstone flags (prevents deleted events & cached folders from resurrecting)
+  event_id_deleted?: boolean;
+  isDeleted?: boolean;
+  deletedAt?: string;
+}
+
+export interface LiveSelectionDoc {
+  selectedPhotoIds: string[];
+  selectedCount: number;
+  clientNotes?: string;
+  status?: string;
+  updatedAt: string;
+  deviceId?: string;
+  rev?: number;
 }
 
 export interface User {
@@ -65,7 +109,6 @@ export interface User {
   name: string;
   email: string;
   phone: string;
-  password?: string;
   studioName: string;
   role: 'photographer' | 'admin';
   points: number; // total points (standardPoints + premiumPoints)
@@ -122,3 +165,48 @@ export interface AdminSettings {
   pricingPackages: PricingPackage[];
   allowAdminDemoBypass: boolean;
 }
+
+export interface DanglingPhotoIssue {
+  id: string;
+  fileName: string;
+  folderName?: string;
+  source: 'cloud' | 'local_idb' | 'both';
+  reason: 'tombstoned_in_cloud' | 'tombstoned_in_idb' | 'deleted_folder_orphan' | 'missing_in_cloud' | 'missing_in_local' | 'corrupted';
+  description: string;
+}
+
+export interface OrphanedFolderIssue {
+  name: string;
+  id?: string;
+  reason: 'in_deleted_tombstone_list' | 'missing_in_cloud' | 'missing_in_local' | 'empty_and_orphaned';
+  description: string;
+}
+
+export interface SyncAuditReport {
+  eventId: string;
+  eventTitle: string;
+  scannedAt: number;
+  cloudTotalDocs: number;
+  cloudValidPhotos: number;
+  cloudTombstonedPhotos: number;
+  localIdbPhotos: number;
+  localTombstonesCount: number;
+  cloudTombstonesCount: number;
+  recordedPhotosCount: number;
+  actualHealthyCount: number;
+  countMismatch: number;
+  danglingPhotos: DanglingPhotoIssue[];
+  orphanedFolders: OrphanedFolderIssue[];
+  isClean: boolean;
+}
+
+export interface DeepCleanupResult {
+  eventId: string;
+  prunedCloudDocs: number;
+  prunedLocalIdb: number;
+  prunedOrphanFolders: number;
+  tombstonesRegistered: number;
+  finalHealthyCount: number;
+  logs: string[];
+}
+

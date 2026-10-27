@@ -81,31 +81,6 @@ export const INITIAL_ADMIN_SETTINGS: AdminSettings = {
   ],
 };
 
-export const INITIAL_USERS: User[] = [
-  {
-    id: 'user-admin-main',
-    name: 'Admin',
-    email: 'admin@a1smartselection.com',
-    phone: '+91 7970641503',
-    password: 'admin',
-    studioName: 'A1 Smart Selection Admin HQ',
-    role: 'admin',
-    points: 1998,
-    standardPoints: 999,
-    premiumPoints: 999,
-    createdAt: '2026-10-01T10:00:00.000Z',
-    watermarkText: 'A1 SMART SELECTION',
-    watermarkPosition: 'bottom-right',
-    watermarkOpacity: 0.35,
-    defaultPhotosPerSheet: 6,
-  },
-];
-
-export const INITIAL_TRANSACTIONS: PointTransaction[] = [];
-
-// Clean initial state: Brand new with zero pre-existing user events
-export const INITIAL_EVENTS: WeddingEvent[] = [];
-
 // Dedicated 4-photo sample client gallery demo event (strictly isolated from client galleries)
 export const SAMPLE_DEMO_EVENT: WeddingEvent = {
   id: 'demo-sample-event',

@@ -2,62 +2,224 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isAuthenticated() {
+    /**
+     * =========================================================================
+     * CLIENT QUERY MANIFEST & SECURITY BOUNDARIES
+     * =========================================================================
+     * Allowed Client Queries:
+     * 1. users:
+     *    - getDoc(doc(db, 'users', uid)) [Owner or Admin]
+     *    - onSnapshot(doc(db, 'users', uid)) [Owner or Admin]
+     *    - getDocs(collection(db, 'users')) [Admin ONLY]
+     * 2. admins:
+     *    - getDoc(doc(db, 'admins', uid)) [Signed-in user testing their own admin status]
+     * 3. publicLinks:
+     *    - getDoc(doc(db, 'publicLinks', slug)) [Public / Anonymous allowed]
+     * 4. events:
+     *    - getDoc(doc(db, 'events', eventId)) [Public / Anonymous allowed]
+     *    - onSnapshot(doc(db, 'events', eventId)) [Public / Anonymous allowed]
+     *    - query(collection(db, 'events'), where('photographerId', '==', uid)) [Signed-in Owner]
+     *    - collection(db, 'events') [Admin ONLY]
+     * 5. events/{eventId}/photos:
+     *    - getDoc(doc(db, 'events', eventId, 'photos', photoId)) [Public / Anonymous allowed]
+     *    - getDocs(collection(db, 'events', eventId, 'photos')) [Public / Anonymous allowed]
+     *    - onSnapshot(collection(db, 'events', eventId, 'photos')) [Public / Anonymous allowed]
+     * 6. events/{eventId}/live_state:
+     *    - getDoc(doc(db, 'events', eventId, 'live_state', 'selection')) [Public / Anonymous allowed]
+     *    - onSnapshot(doc(db, 'events', eventId, 'live_state', 'selection')) [Public / Anonymous allowed]
+     * 7. transactions:
+     *    - query(collection(db, 'transactions'), where('userId', '==', uid)) [Signed-in Owner]
+     *    - collection(db, 'transactions') [Admin ONLY]
+     * 8. settings:
+     *    - getDoc(doc(db, 'settings', 'global')) [Public allowed]
+     *    - onSnapshot(doc(db, 'settings', 'global')) [Public allowed]
+     * =========================================================================
+     */
+
+    function isSignedIn() {
       return request.auth != null;
     }
 
     function isAdmin() {
-      return isAuthenticated() &&
-        (request.auth.token.email == 'goldanpatel99@gmail.com' ||
-         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
     }
 
-    // Users Collection
+    // Admin collection: readable only by the owner admin, writable only by server (Admin SDK)
+    match /admins/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    function isEventOwner(targetEventId) {
+      return isSignedIn() && (
+        isAdmin() ||
+        (
+          exists(/databases/$(database)/documents/events/$(targetEventId)) &&
+          get(/databases/$(database)/documents/events/$(targetEventId)).data.photographerId == request.auth.uid
+        )
+      );
+    }
+
+    // Public link slug-to-eventId registry (pure getDoc lookups, no query/list scraping)
+    match /publicLinks/{slug} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isSignedIn() &&
+        request.resource.data.eventId is string &&
+        isEventOwner(request.resource.data.eventId);
+      allow update: if isSignedIn() &&
+        request.resource.data.eventId is string &&
+        request.resource.data.eventId == resource.data.eventId &&
+        isEventOwner(resource.data.eventId);
+      allow delete: if isSignedIn() &&
+        resource.data.eventId is string &&
+        isEventOwner(resource.data.eventId);
+    }
+
+    // Users Collection: Users read own doc, admins read all
     match /users/{userId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+
+      // Create own profile on initial signup (strictly default role 'photographer' and 0 points)
+      allow create: if isSignedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.role == 'photographer' &&
+        (!('points' in request.resource.data) || request.resource.data.points == 0) &&
+        (!('standardPoints' in request.resource.data) || request.resource.data.standardPoints == 0) &&
+        (!('premiumPoints' in request.resource.data) || request.resource.data.premiumPoints == 0) &&
+        (!('isBlocked' in request.resource.data) || request.resource.data.isBlocked == false);
+
+      // Update: Admin can do anything; User can update non-privileged fields (cannot change role, points, blocked status, or email)
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (
+          request.auth.uid == userId &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'role', 'points', 'standardPoints', 'premiumPoints', 'isBlocked', 'blockedReason', 'email'
+          ])
+        )
+      );
+
+      allow delete: if isAdmin();
     }
 
     // Wedding Events Collection
     match /events/{eventId} {
-      // Clients need public read access to view their gallery via unique link
-      allow read: if true;
-      // Photographers create their events
-      allow create: if true;
-      // Clients submit photo selections / hearts, and photographers edit details
-      allow update: if true;
-      // Only event owner or admin can delete
-      allow delete: if true;
+      // Anyone with the link can read single event doc (get)
+      allow get: if true;
 
-      // Event Photos Subcollection (Photos stored per document)
+      // List is restricted: photographers only list their own events; admins can list all
+      allow list: if isSignedIn() && (resource.data.photographerId == request.auth.uid || isAdmin());
+
+      // Events creation is server-authoritative only (Admin SDK via create-event function)
+      allow create: if false;
+
+      // Update:
+      // 1. Admin: full access
+      // 2. Owner: can update non-immutable fields (cannot change photographerId, pointTier, maxPhotoCapacity, createdAt, deadlineDate, deadlineAt)
+      // 3. Anonymous Client: can update ONLY submission keys (status, clientNotes, submittedAt, selectedCount, lastSelectedAt, clientPhone)
+      //    while status is not completed/locked and deadline has not expired
+      allow update: if (
+        isAdmin() ||
+        (
+          isSignedIn() &&
+          resource.data.photographerId == request.auth.uid &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'photographerId', 'pointTier', 'maxPhotoCapacity', 'createdAt', 'deadlineDate', 'deadlineAt'
+          ])
+        ) ||
+        (
+          resource.data.status != 'completed' &&
+          resource.data.status != 'locked' &&
+          (!('deadlineAt' in resource.data) || request.time < resource.data.deadlineAt) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'clientNotes', 'submittedAt', 'selectedCount', 'lastSelectedAt', 'clientPhone'
+          ])
+        )
+      );
+
+      // Only event owner or admin can delete; no client delete
+      allow delete: if isSignedIn() && (resource.data.photographerId == request.auth.uid || isAdmin());
+
+      // Event Photos Subcollection: /events/{eventId}/photos/{photoId}
       match /photos/{photoId} {
-        allow read: if true;
-        allow write: if true;
+        // Anyone with the event link can read photos (get & list)
+        allow get, list: if true;
+
+        // Photo upload/creation: only event photographer or admin. URLs must be https
+        allow create: if isSignedIn() && (
+          get(/databases/$(database)/documents/events/$(eventId)).data.photographerId == request.auth.uid ||
+          isAdmin()
+        ) &&
+        request.resource.data.url is string &&
+        request.resource.data.url.matches('^https://.+') &&
+        (!('thumbnailUrl' in request.resource.data) || (
+          request.resource.data.thumbnailUrl is string &&
+          request.resource.data.thumbnailUrl.matches('^https://.+')
+        ));
+
+        // Photo update & deletion: only event photographer or admin (clients have NO write access)
+        allow update, delete: if isSignedIn() && (
+          get(/databases/$(database)/documents/events/$(eventId)).data.photographerId == request.auth.uid ||
+          isAdmin()
+        );
       }
 
-      match /{allChildren=**} {
-        allow read, write: if true;
+      // Live State Subcollection: /events/{eventId}/live_state/{doc}
+      match /live_state/{doc} {
+        // Anyone with the event link can read live state (selection mirror)
+        allow get, list: if true;
+
+        // Creation & updates:
+        // 1. Admin or Owner: full access
+        // 2. Client: allowed only if event status is not completed/locked, keys limited to selection payload,
+        //    selectedPhotoIds is list with size <= 5000, and deadline has not expired
+        allow create, update: if (
+          isAdmin() ||
+          (
+            isSignedIn() &&
+            get(/databases/$(database)/documents/events/$(eventId)).data.photographerId == request.auth.uid
+          ) ||
+          (
+            get(/databases/$(database)/documents/events/$(eventId)).data.status != 'completed' &&
+            get(/databases/$(database)/documents/events/$(eventId)).data.status != 'locked' &&
+            (!('deadlineAt' in get(/databases/$(database)/documents/events/$(eventId)).data) || request.time < get(/databases/$(database)/documents/events/$(eventId)).data.deadlineAt) &&
+            request.resource.data.keys().hasOnly([
+              'selectedPhotoIds', 'selectedCount', 'clientNotes', 'status', 'updatedAt', 'deviceId', 'rev'
+            ]) &&
+            request.resource.data.selectedPhotoIds is list &&
+            request.resource.data.selectedPhotoIds.size() <= 5000
+          )
+        );
+
+        // Deletion: only event photographer or admin
+        allow delete: if isSignedIn() && (
+          get(/databases/$(database)/documents/events/$(eventId)).data.photographerId == request.auth.uid ||
+          isAdmin()
+        );
       }
     }
 
-    // Transactions Collection
+    // Transactions Collection: readable by user/admin, writable ONLY by server (Admin SDK)
     match /transactions/{transactionId} {
-      allow read: if isAuthenticated() || isAdmin() || true;
-      allow create: if true;
-      allow update, delete: if isAdmin() || true;
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if false;
     }
 
-    // System Settings Collection
+    // Top-level legacy live_state: disabled (subcollection /events/{id}/live_state used instead)
+    match /live_state/{doc} {
+      allow read, write: if false;
+    }
+
+    // System Settings Collection: read by all, write by admin only
     match /settings/{settingsId} {
       allow read: if true;
-      allow write: if isAdmin() || true;
+      allow write: if isAdmin();
     }
   }
 }

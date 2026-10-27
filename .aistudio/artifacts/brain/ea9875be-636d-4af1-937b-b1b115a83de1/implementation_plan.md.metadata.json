@@ -1,0 +1,6 @@
+{
+  "summary": "Architectural refactoring blueprint for A1 Smart Selection: Unifies synchronization to real-time Firestore onSnapshot at events/{eventId}/live_state/selection, purges redundant local JSON files and SSE from server.ts, guarantees Firestore 1MB safety for 5,000 photos via strict subcollections, removes ghost cleanup hacks, and eliminates folder duplication bugs.",
+  "updatedAt": "2026-10-17T04:10:59.852988013Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

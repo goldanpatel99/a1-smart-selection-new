@@ -1,8 +1,8 @@
 import { WeddingEvent, User, PointTransaction, AdminSettings } from '../types';
-import { INITIAL_ADMIN_SETTINGS, INITIAL_USERS, INITIAL_EVENTS, INITIAL_TRANSACTIONS } from './mockData';
+import { INITIAL_ADMIN_SETTINGS } from './mockData';
 
 const STORAGE_KEYS = {
-  USERS: 'a1_users_v6',
+  CACHED_PROFILE: 'a1_cached_profile_v6',
   CURRENT_USER_ID: 'a1_current_user_id_v6',
   ACTIVE_EVENT_ID: 'a1_active_event_id_v6',
   EVENTS: 'a1_events_v6',
@@ -27,37 +27,46 @@ try {
 } catch {}
 
 export const storage = {
-  getUsers(): User[] {
+  getCachedProfile(): User | null {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.USERS);
-      if (!data) {
-        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(INITIAL_USERS));
-        return INITIAL_USERS;
-      }
-      const parsed: User[] = JSON.parse(data);
-      // Normalize points fields for Standard and Premium points support
-      return parsed.map((u) => {
-        const std = u.standardPoints !== undefined ? u.standardPoints : (u.points || 0);
-        const prm = u.premiumPoints !== undefined ? u.premiumPoints : 0;
-        return {
-          ...u,
-          standardPoints: std,
-          premiumPoints: prm,
-          points: std + prm,
-        };
-      });
+      const data = localStorage.getItem(STORAGE_KEYS.CACHED_PROFILE);
+      return data ? JSON.parse(data) : null;
     } catch {
-      return INITIAL_USERS;
+      return null;
     }
   },
 
-  saveUsers(users: User[]): void {
+  saveCachedProfile(user: User | null): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+      if (user) {
+        // Strip sensitive fields, keep only UI preferences and profile info
+        const safeProfile: Partial<User> = {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          studioName: user.studioName,
+          role: user.role,
+          watermarkText: user.watermarkText,
+          watermarkPosition: user.watermarkPosition,
+          watermarkOpacity: user.watermarkOpacity,
+          defaultPhotosPerSheet: user.defaultPhotosPerSheet,
+          studioLogoUrl: user.studioLogoUrl,
+        };
+        localStorage.setItem(STORAGE_KEYS.CACHED_PROFILE, JSON.stringify(safeProfile));
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.CACHED_PROFILE);
+      }
     } catch (e) {
-      console.error('Failed to save users', e);
+      console.warn('Failed to save cached profile', e);
     }
   },
+
+  getUsers(): User[] {
+    return [];
+  },
+
+  saveUsers(_users: User[]): void {},
 
   getCurrentUserId(): string | null {
     try {
@@ -105,10 +114,7 @@ export const storage = {
   getEvents(): WeddingEvent[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.EVENTS);
-      if (!data) {
-        localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(INITIAL_EVENTS));
-        return INITIAL_EVENTS;
-      }
+      if (!data) return [];
       const parsed: WeddingEvent[] = JSON.parse(data);
       return parsed.map((e) => ({
         ...e,
@@ -117,42 +123,33 @@ export const storage = {
         photosCount: Math.max(e.photosCount || 0, (e.photos || []).length),
       }));
     } catch {
-      return INITIAL_EVENTS;
+      return [];
     }
   },
 
   saveEvents(events: WeddingEvent[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(events));
-    } catch {
-      // If quota exceeded due to large photo base64 strings, save lightweight metadata copy to localStorage
-      try {
-        const lightweight = events.map((e) => ({
-          ...e,
-          photosCount: Math.max(e.photosCount || 0, (e.photos || []).length),
-          photos: (e.photos || []).map((p) => ({
-            ...p,
-            url: '', // strip heavy base64 from localStorage copy
-            thumbnailUrl: '',
-          })),
-        }));
-        localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(lightweight));
-      } catch (innerErr) {
-        console.warn('Could not save to localStorage:', innerErr);
-      }
+      // High-volume performance optimization:
+      // Strip heavy base64 photo arrays from localStorage (full photos are safely in IndexedDB).
+      // This guarantees localStorage stays under 5MB quota and JSON.stringify runs in <1ms without UI freeze.
+      const lightweight = events.map((e) => ({
+        ...e,
+        photosCount: Math.max(e.photosCount || 0, (e.photos || []).length),
+        photos: [], // keep empty in localStorage metadata; loaded on demand from IndexedDB
+      }));
+      localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(lightweight));
+    } catch (err) {
+      console.warn('Could not save lightweight events to localStorage:', err);
     }
   },
 
   getTransactions(): PointTransaction[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-      if (!data) {
-        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(INITIAL_TRANSACTIONS));
-        return INITIAL_TRANSACTIONS;
-      }
+      if (!data) return [];
       return JSON.parse(data);
     } catch {
-      return INITIAL_TRANSACTIONS;
+      return [];
     }
   },
 
@@ -203,9 +200,15 @@ export const storage = {
     }
   },
 
-  resetAllData(): void {
-    localStorage.removeItem(STORAGE_KEYS.USERS);
+  clearCachedProfile(): void {
+    localStorage.removeItem(STORAGE_KEYS.CACHED_PROFILE);
     localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
+  },
+
+  resetAllData(): void {
+    localStorage.removeItem(STORAGE_KEYS.CACHED_PROFILE);
+    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_EVENT_ID);
     localStorage.removeItem(STORAGE_KEYS.EVENTS);
     localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
     localStorage.removeItem(STORAGE_KEYS.SETTINGS);

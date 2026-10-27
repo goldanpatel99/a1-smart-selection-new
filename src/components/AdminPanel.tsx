@@ -36,6 +36,8 @@ import {
 } from 'lucide-react';
 import { User, AdminSettings, PointTier } from '../types';
 import { getBaseAppUrl, CUSTOM_DOMAIN } from '../utils/domainConfig';
+import { firebaseService } from '../services/firebaseService';
+import { RETENTION_DAYS } from '../config/retention';
 
 export const AdminPanel: React.FC = () => {
   const {
@@ -50,7 +52,6 @@ export const AdminPanel: React.FC = () => {
     adminToggleBlockPhotographer,
     adminDeletePhotographer,
     adminResetAllStoredData,
-    runStorageAutoClean,
     navigateTo,
     showToast,
   } = useApp();
@@ -79,6 +80,96 @@ export const AdminPanel: React.FC = () => {
   const [tempPasswordModal, setTempPasswordModal] = useState<{ user: User; pass: string } | null>(null);
   const [customPasswordInput, setCustomPasswordInput] = useState<string>('');
 
+  // R2 Base64 Migration state
+  const [isMigratingBase64, setIsMigratingBase64] = useState(false);
+  const [migrationProgress, setMigrationProgress] = useState<{ total: number; current: number } | null>(null);
+
+  const handleMigrateBase64ToR2 = async () => {
+    setIsMigratingBase64(true);
+    let totalMigrated = 0;
+    try {
+      const allEventsWithBase64 = events.filter((e) =>
+        e.photos && e.photos.some((p) => p.url?.startsWith('data:') || p.thumbnailUrl?.startsWith('data:'))
+      );
+
+      if (allEventsWithBase64.length === 0) {
+        showToast('All photos are already on Cloudflare R2! No legacy base64 photos found.', 'success');
+        setIsMigratingBase64(false);
+        return;
+      }
+
+      let totalBase64 = 0;
+      allEventsWithBase64.forEach((e) => {
+        totalBase64 += e.photos.filter((p) => p.url?.startsWith('data:') || p.thumbnailUrl?.startsWith('data:')).length;
+      });
+      setMigrationProgress({ total: totalBase64, current: 0 });
+
+      for (const event of allEventsWithBase64) {
+        const base64Photos = event.photos.filter((p) => p.url?.startsWith('data:') || p.thumbnailUrl?.startsWith('data:'));
+        const CHUNK_SIZE = 5;
+        for (let i = 0; i < base64Photos.length; i += CHUNK_SIZE) {
+          const chunk = base64Photos.slice(i, i + CHUNK_SIZE);
+          const presignPayload = chunk.map((p) => ({
+            photoId: p.id,
+            type: 'full',
+            contentType: 'image/jpeg',
+            extension: 'jpg',
+          }));
+
+          const res = await fetch('/api/r2-presign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ eventId: event.id, files: presignPayload }),
+          });
+
+          if (!res.ok) continue;
+          const { urls } = await res.json();
+          const updatedChunk: any[] = [];
+
+          for (const p of chunk) {
+            const presigned = urls?.find((u: any) => u.photoId === p.id);
+            if (presigned) {
+              const arr = p.url.split(',');
+              const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+              const bstr = atob(arr[1]);
+              let n = bstr.length;
+              const u8arr = new Uint8Array(n);
+              while (n--) u8arr[n] = bstr.charCodeAt(n);
+              const blob = new Blob([u8arr], { type: mime });
+
+              await fetch(presigned.uploadUrl, {
+                method: 'PUT',
+                body: blob,
+                headers: { 'Content-Type': mime },
+              });
+
+              updatedChunk.push({
+                ...p,
+                url: presigned.publicUrl,
+                thumbnailUrl: presigned.publicUrl,
+                r2Key: presigned.key,
+              });
+              totalMigrated++;
+              setMigrationProgress((prev) => (prev ? { ...prev, current: totalMigrated } : null));
+            }
+          }
+
+          if (updatedChunk.length > 0) {
+            await firebaseService.savePhotos(event.id, updatedChunk);
+          }
+        }
+      }
+
+      showToast(`Migration complete! Successfully moved ${totalMigrated} photos to Cloudflare R2.`, 'success');
+    } catch (err: any) {
+      console.error('Migration error:', err);
+      showToast(`Migration error: ${err.message}`, 'error');
+    } finally {
+      setIsMigratingBase64(false);
+      setMigrationProgress(null);
+    }
+  };
+
   // Admin Self-Credentials Modification Modal State
   const adminUser = users.find((u) => u.role === 'admin');
   const [showAdminCredsModal, setShowAdminCredsModal] = useState(false);
@@ -86,16 +177,16 @@ export const AdminPanel: React.FC = () => {
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [copiedDns, setCopiedDns] = useState<string | null>(null);
   const [adminEmailInput, setAdminEmailInput] = useState(adminUser?.email || 'admin@a1smartselection.com');
-  const [adminPassInput, setAdminPassInput] = useState(adminUser?.password || 'admin');
+  const [adminPassInput, setAdminPassInput] = useState('');
   const [showAdminPasswordPlain, setShowAdminPasswordPlain] = useState(false);
 
-  const handleSaveAdminCreds = (e: React.FormEvent) => {
+  const handleSaveAdminCreds = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminEmailInput.trim() || !adminPassInput.trim()) {
-      showToast('Admin email aur password empty nahi ho sakte!', 'error');
+    if (!adminEmailInput.trim()) {
+      showToast('Admin email empty nahi ho sakta!', 'error');
       return;
     }
-    const ok = adminUpdateOwnCredentials(adminEmailInput.trim(), adminPassInput.trim());
+    const ok = await adminUpdateOwnCredentials(adminEmailInput.trim(), adminPassInput.trim());
     if (ok) {
       setShowAdminCredsModal(false);
     }
@@ -142,37 +233,26 @@ export const AdminPanel: React.FC = () => {
 
   const sendCredentialsWhatsApp = (user: User) => {
     const cleanPhone = (user.phone || '').replace(/[^0-9]/g, '');
-    const pass = user.password || '123456';
     const message = encodeURIComponent(
-      `Hello ${user.name},\n\nA1 Smart Selection Studio Credentials:\n• Studio: ${user.studioName}\n• Login ID (Email): ${user.email}\n• Password: ${pass}\n\nLogin URL: ${getBaseAppUrl()}\nThank you!`
+      `Hello ${user.name},\n\nA1 Smart Selection Studio Account:\n• Studio: ${user.studioName}\n• Login ID (Email): ${user.email}\n\nLogin URL: ${getBaseAppUrl()}\n(Use Forgot Password on the studio login page to reset password).\nThank you!`
     );
     window.open(`https://wa.me/${cleanPhone}?text=${message}`, '_blank');
   };
 
   const handleOpenPasswordModal = (user: User) => {
-    const currentPass = user.password || '123456';
+    const currentPass = '••••••••';
     setCustomPasswordInput(currentPass);
     setTempPasswordModal({ user, pass: currentPass });
   };
 
-  const handleSaveCustomPassword = (userId: string) => {
-    if (!customPasswordInput.trim()) {
-      showToast('Password cannot be empty!', 'error');
-      return;
-    }
-    const updatedPass = adminResetPassword(userId, customPasswordInput.trim());
-    if (tempPasswordModal) {
-      setTempPasswordModal({ ...tempPasswordModal, pass: updatedPass });
-    }
+  const handleSaveCustomPassword = async (userId: string) => {
+    await adminResetPassword(userId);
+    showToast('Password reset link sent to photographer email!', 'success');
   };
 
-  const handleGenerateNewPassword = (userId: string) => {
-    const generated = `A1-${Math.floor(100000 + Math.random() * 900000)}`;
-    setCustomPasswordInput(generated);
-    const updatedPass = adminResetPassword(userId, generated);
-    if (tempPasswordModal) {
-      setTempPasswordModal({ ...tempPasswordModal, pass: updatedPass });
-    }
+  const handleGenerateNewPassword = async (userId: string) => {
+    await adminResetPassword(userId);
+    showToast('Password reset link sent to photographer email!', 'success');
   };
 
   // Editable pricing settings
@@ -222,8 +302,8 @@ export const AdminPanel: React.FC = () => {
     setSelectedUserForPoints(null);
   };
 
-  const handleResetPassword = (user: User) => {
-    const tempPass = adminResetPassword(user.id);
+  const handleResetPassword = async (user: User) => {
+    const tempPass = await adminResetPassword(user.id);
     setTempPasswordModal({ user, pass: tempPass });
   };
 
@@ -269,7 +349,7 @@ export const AdminPanel: React.FC = () => {
           <button
             onClick={() => {
               setAdminEmailInput(adminUser?.email || 'admin@a1smartselection.com');
-              setAdminPassInput(adminUser?.password || 'admin');
+              setAdminPassInput('');
               setShowAdminCredsModal(true);
             }}
             className="px-3.5 py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
@@ -363,21 +443,40 @@ export const AdminPanel: React.FC = () => {
             </div>
           </div>
 
-          <button
-            onClick={() => {
-              const count = runStorageAutoClean();
-              showToast(
-                count > 0
-                  ? `${count} events older than 50 days successfully cleaned!`
-                  : 'All events are currently within 50 days policy or already optimized.',
-                'success'
-              );
-            }}
-            className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap self-start sm:self-auto transition-colors"
-          >
-            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-            <span>Run 50-Day Auto Purge</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleMigrateBase64ToR2}
+              disabled={isMigratingBase64}
+              className="px-3.5 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap transition-all shadow-md shadow-orange-500/20"
+            >
+              {isMigratingBase64 ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                  <span>
+                    Migrating... {migrationProgress ? `(${migrationProgress.current}/${migrationProgress.total})` : ''}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Cloud className="w-3.5 h-3.5 text-white" />
+                  <span>Migrate Old Base64 Photos to R2</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                showToast(
+                  `Server cron job automatically enforces the ${RETENTION_DAYS}-day retention policy daily. Previews older than ${RETENTION_DAYS} days are safely purged from R2 storage.`,
+                  'info'
+                );
+              }}
+              className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+              <span>{RETENTION_DAYS}-Day Auto Retention Policy</span>
+            </button>
+          </div>
         </div>
 
         {/* Live Storage Gauge & Progress Bar */}
@@ -546,40 +645,24 @@ export const AdminPanel: React.FC = () => {
                           {/* Password with Eye Toggle & Actions */}
                           <div className="flex items-center gap-1.5 text-xs mt-1.5">
                             <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider font-sans bg-neutral-800 px-1.5 py-0.5 rounded border border-neutral-700">
-                              PASS
+                              AUTH
                             </span>
-                            <span className="font-mono font-bold text-amber-300 bg-neutral-950 px-2 py-0.5 rounded border border-neutral-800 select-all">
-                              {showPasswords[user.id] ? (user.password || '123456') : '••••••••'}
+                            <span className="font-mono text-neutral-400 bg-neutral-950 px-2 py-0.5 rounded border border-neutral-800 text-[11px]">
+                              Firebase Auth (Encrypted)
                             </span>
                             <button
                               type="button"
-                              onClick={() => toggleShowPassword(user.id)}
-                              className="p-1 text-neutral-400 hover:text-white rounded hover:bg-neutral-800 transition-colors"
-                              title={showPasswords[user.id] ? 'Hide Password' : 'Show Password'}
+                              onClick={() => handleOpenPasswordModal(user)}
+                              className="p-1 text-amber-400 hover:text-amber-300 rounded hover:bg-neutral-800 transition-colors"
+                              title="Send Password Reset Email"
                             >
-                              {showPasswords[user.id] ? (
-                                <EyeOff className="w-3.5 h-3.5 text-amber-400" />
-                              ) : (
-                                <Eye className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(user.password || '123456', `pass-${user.id}`)}
-                              className="p-1 text-neutral-400 hover:text-white rounded hover:bg-neutral-800 transition-colors"
-                              title="Copy Password"
-                            >
-                              {copiedField === `pass-${user.id}` ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
+                              <Key className="w-3.5 h-3.5" />
                             </button>
                             <button
                               type="button"
                               onClick={() => sendCredentialsWhatsApp(user)}
                               className="p-1 text-emerald-400 hover:text-emerald-300 rounded hover:bg-emerald-950/40 transition-colors ml-1"
-                              title="Send ID & Password via WhatsApp"
+                              title="Send Studio Info via WhatsApp"
                             >
                               <MessageCircle className="w-3.5 h-3.5" />
                             </button>
@@ -1165,8 +1248,8 @@ export const AdminPanel: React.FC = () => {
                 onClick={() => handleSaveCustomPassword(tempPasswordModal.user.id)}
                 className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5"
               >
-                <Save className="w-4 h-4" />
-                <span>Save Password to Cloud Firestore</span>
+                <Key className="w-4 h-4" />
+                <span>Send Password Reset Email</span>
               </button>
 
               <button
@@ -1175,7 +1258,7 @@ export const AdminPanel: React.FC = () => {
                 className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
               >
                 <MessageCircle className="w-4 h-4" />
-                <span>Send ID & Pass on WhatsApp</span>
+                <span>Send Studio Info on WhatsApp</span>
               </button>
 
               <button

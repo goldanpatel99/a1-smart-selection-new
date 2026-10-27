@@ -35,9 +35,46 @@ import {
   Store,
   HardDrive,
   Zap,
+  RefreshCw,
 } from 'lucide-react';
-import { WeddingEvent } from '../types';
+import { WeddingEvent, Photo, isRemoteUrl } from '../types';
+import { RETENTION_DAYS } from '../config/retention';
 import { getClientGalleryUrl } from '../utils/domainConfig';
+import { usePhotoSrc } from '../utils/photoSrcResolver';
+
+const EventCoverThumbnail: React.FC<{ event: WeddingEvent }> = ({ event }) => {
+  const firstPhoto = event.photos && event.photos.length > 0 ? event.photos[0] : null;
+  const targetPhoto = React.useMemo<Photo | null>(() => {
+    if (firstPhoto) return firstPhoto;
+    if (event.coverPhotoUrl && isRemoteUrl(event.coverPhotoUrl)) {
+      return {
+        id: 'cover-' + event.id,
+        folderId: '',
+        folderName: '',
+        filename: 'cover.jpg',
+        originalName: 'cover.jpg',
+        url: event.coverPhotoUrl,
+        thumbnailUrl: event.coverPhotoUrl,
+        sizeBytes: 0,
+        isSelected: false,
+        uploadedAt: '',
+      };
+    }
+    return null;
+  }, [event.id, event.coverPhotoUrl, firstPhoto]);
+
+  const src = usePhotoSrc(targetPhoto, 'thumb');
+
+  if (!src) return null;
+
+  return (
+    <img
+      src={src}
+      alt="Cover"
+      className="w-14 h-14 rounded-xl object-cover border border-neutral-700 flex-shrink-0"
+    />
+  );
+};
 
 interface DashboardProps {
   onOpenBuyPoints: () => void;
@@ -117,18 +154,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [editPhone, setEditPhone] = useState('');
   const [editEventDate, setEditEventDate] = useState('');
   const [editDeadlineDate, setEditDeadlineDate] = useState('');
-  const [editStatus, setEditStatus] = useState<'draft' | 'active' | 'completed' | 'expired'>('active');
+  const [editStatus, setEditStatus] = useState<'draft' | 'active' | 'completed' | 'expired' | 'locked'>('active');
   const [editLimitEnabled, setEditLimitEnabled] = useState(false);
   const [editMaxLimit, setEditMaxLimit] = useState<number>(80);
   const [editPhotosPerSheet, setEditPhotosPerSheet] = useState<number>(6);
 
   // Filter events for this photographer (or all if admin viewing dashboard)
-  const myEvents = events.filter((e) =>
-    currentUser?.role === 'admin'
+  const myEvents = events.filter((e) => {
+    return currentUser?.role === 'admin'
       ? true
       : e.photographerId === currentUser?.id ||
-        (Boolean(currentUser?.email) && (e as any).photographerEmail?.toLowerCase() === currentUser?.email?.toLowerCase())
-  );
+        (Boolean(currentUser?.email) && (e as any).photographerEmail?.toLowerCase() === currentUser?.email?.toLowerCase());
+  });
 
   const filteredEvents = myEvents.filter((e) => {
     if (filterStatus === 'all') return true;
@@ -172,10 +209,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
     window.open(`https://wa.me/${phoneDigits}?text=${text}`, '_blank');
   };
 
-  const handleExtend = (eventId: string) => {
+  const handleExtend = async (eventId: string) => {
     const pts = adminSettings.pointsPerExtension || 1;
     if (confirm(`Extend deadline by 6 days? This will cost ${pts} ${pts === 1 ? 'point' : 'points'}.`)) {
-      extendDeadline(eventId, 6);
+      await extendDeadline(eventId, 6);
     }
   };
 
@@ -207,7 +244,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
       coupleName: editCouple.trim(),
       clientPhone: editPhone.trim(),
       eventDate: editEventDate,
-      deadlineDate: editDeadlineDate,
       status: editStatus,
       maxSelectionLimit: editLimitEnabled ? Number(editMaxLimit) : undefined,
       photosPerSheet: Number(editPhotosPerSheet) || 6,
@@ -354,6 +390,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </button>
               )}
 
+
               <button
                 type="button"
                 onClick={logout}
@@ -379,17 +416,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* RIGHT MAIN CONTENT AREA */}
         <section className="lg:col-span-8 xl:col-span-9 space-y-6">
-          {/* Top Title */}
-          <div className="pb-4 border-b border-neutral-800">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs uppercase tracking-wider font-semibold text-neutral-400">
-                Studio Events & Client Selections
-              </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+          {/* Top Title & Utilities */}
+          <div className="pb-4 border-b border-neutral-800 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs uppercase tracking-wider font-semibold text-neutral-400">
+                  Studio Events & Client Selections
+                </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold font-heading text-white">
+                {currentUser?.studioName || 'My Studio'}
+              </h1>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold font-heading text-white">
-              {currentUser?.studioName || 'My Studio'}
-            </h1>
+
           </div>
 
       {/* Clean 3-Card Stats Grid */}
@@ -619,13 +659,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             Client: {event.coupleName} ({event.clientPhone})
                           </p>
                         </div>
-                        {Boolean(event.coverPhotoUrl && event.coverPhotoUrl.trim()) && (
-                          <img
-                            src={event.coverPhotoUrl}
-                            alt="Cover"
-                            className="w-14 h-14 rounded-xl object-cover border border-neutral-700 flex-shrink-0"
-                          />
-                        )}
+                        <EventCoverThumbnail event={event} />
                       </div>
 
                       {/* Folder & Deadline Meta Bar with Time Left */}
@@ -657,13 +691,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           </span>
                         </div>
 
-                        {/* 50-Day Storage Lifecycle (Kitne din huye / 50 dino me se) */}
+                        {/* 40-Day Storage Lifecycle (Kitne din huye / 40 dino me se) */}
                         {(() => {
                           const eventCreatedMs = new Date(event.createdAt || Date.now()).getTime();
                           const daysPassed = Math.max(0, Math.floor((nowTime - eventCreatedMs) / (24 * 60 * 60 * 1000)));
-                          const daysCompleted = Math.min(50, daysPassed);
-                          const daysRemaining = Math.max(0, 50 - daysPassed);
-                          const storagePercent = Math.min(100, Math.round((daysCompleted / 50) * 100));
+                          const daysCompleted = Math.min(RETENTION_DAYS, daysPassed);
+                          const daysRemaining = Math.max(0, RETENTION_DAYS - daysPassed);
+                          const storagePercent = Math.min(100, Math.round((daysCompleted / RETENTION_DAYS) * 100));
 
                           return (
                             <div className="pt-2 border-t border-neutral-800/80 space-y-1.5">
@@ -672,26 +706,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   <HardDrive className="w-3.5 h-3.5 text-orange-400" />
                                   <span>Cloudflare Storage:</span>
                                 </span>
-                                {event.isStoragePurged || daysPassed >= 50 ? (
+                                {event.isStoragePurged || daysPassed >= RETENTION_DAYS ? (
                                   <span className="font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded text-[10px] border border-amber-500/20">
-                                    50/50 Din Puray (Previews Purged • Selections Safe)
+                                    {RETENTION_DAYS}/{RETENTION_DAYS} Din Puray (Previews Purged • Selections Safe)
                                   </span>
                                 ) : (
                                   <div className="flex items-center gap-1 font-mono text-[11px]">
-                                    <span className="text-white font-extrabold">{daysCompleted}/50</span>
+                                    <span className="text-white font-extrabold">{daysCompleted}/{RETENTION_DAYS}</span>
                                     <span className="text-neutral-400 font-sans">dino me se</span>
                                     <span className="text-emerald-400 font-semibold text-[10px]">({daysRemaining}d bache)</span>
                                   </div>
                                 )}
                               </div>
 
-                              {/* Visual 50-Day Progress Bar */}
+                              {/* Visual 40-Day Progress Bar */}
                               <div className="w-full h-1.5 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
                                 <div
                                   className={`h-full transition-all duration-300 rounded-full ${
-                                    daysPassed >= 50 || event.isStoragePurged
+                                    daysPassed >= RETENTION_DAYS || event.isStoragePurged
                                       ? 'bg-amber-500'
-                                      : daysPassed >= 40
+                                      : daysPassed >= 30
                                       ? 'bg-rose-500'
                                       : 'bg-gradient-to-r from-orange-500 to-emerald-400'
                                   }`}
@@ -784,14 +818,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <span>+6 Days Extend (1 Pt)</span>
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(event.id, event.title)}
-                          className="text-neutral-500 hover:text-rose-400 text-xs flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-rose-950/20"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Delete</span>
-                        </button>
+                        <div className="flex items-center gap-1">
+
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(event.id, event.title)}
+                            className="text-neutral-500 hover:text-rose-400 text-xs flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-rose-950/20"
+                            title="Delete Event"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1045,6 +1083,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       )}
+
     </div>
   );
 };
