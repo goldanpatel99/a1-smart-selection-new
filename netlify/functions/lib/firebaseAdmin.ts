@@ -1,25 +1,47 @@
-import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { initializeApp, cert, getApps, type ServiceAccount } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 
-const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'united-tracker-g48x0';
-const DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || 'ai-studio-a1smartselection-ea9875be-636d-4af1-937b-b1b115a83de1';
+let serviceAccount: (ServiceAccount & { project_id?: string }) | null = null;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } catch (err) {
+    console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT JSON:', err);
+  }
+}
+
+const PROJECT_ID =
+  process.env.FIREBASE_PROJECT_ID ||
+  process.env.VITE_FIREBASE_PROJECT_ID ||
+  serviceAccount?.project_id ||
+  serviceAccount?.projectId ||
+  '';
+
+const DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || '(default)';
+
+if (!PROJECT_ID) {
+  console.error(
+    'Firebase Admin error: No project ID determined. Set FIREBASE_PROJECT_ID, VITE_FIREBASE_PROJECT_ID, or provide project_id in FIREBASE_SERVICE_ACCOUNT.'
+  );
+}
 
 if (!getApps().length) {
-  try {
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-      initializeApp({
-        credential: cert(serviceAccount),
-        projectId: PROJECT_ID,
-      });
-    } else {
-      initializeApp({
-        projectId: PROJECT_ID,
-      });
+  if (PROJECT_ID) {
+    try {
+      if (serviceAccount) {
+        initializeApp({
+          credential: cert(serviceAccount),
+          projectId: PROJECT_ID,
+        });
+      } else {
+        initializeApp({
+          projectId: PROJECT_ID,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to initialize Firebase Admin SDK:', err);
     }
-  } catch (err) {
-    console.error('Failed to initialize Firebase Admin SDK:', err);
   }
 }
 
@@ -29,8 +51,10 @@ export const adminAuth = getApps().length ? getAuth() : null;
 export function getAdminFirestore() {
   if (!getApps().length) return null;
   try {
-    // Pass databaseId if provided
-    return DATABASE_ID ? getFirestore(DATABASE_ID) : getFirestore();
+    // Pass databaseId if provided and not default
+    return DATABASE_ID && DATABASE_ID !== '(default)'
+      ? getFirestore(DATABASE_ID)
+      : getFirestore();
   } catch (e) {
     console.error('Error getting Firestore Admin instance:', e);
     return null;
