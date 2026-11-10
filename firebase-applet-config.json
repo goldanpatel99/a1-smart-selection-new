@@ -1,12 +1,12 @@
 {
-  "projectId": "united-tracker-g48x0",
-  "appId": "1:171532550649:web:74d369d477873aea19fd28",
-  "apiKey": "AIzaSyDf8TS19JFF0TzfeVQbWktC65oOFl_4ecY",
-  "authDomain": "united-tracker-g48x0.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-a1smartselection-ea9875be-636d-4af1-937b-b1b115a83de1",
-  "storageBucket": "united-tracker-g48x0.firebasestorage.app",
-  "messagingSenderId": "171532550649",
+  "projectId": "a1-smart-selection",
+  "appId": "1:535612274420:web:9b0e29ad982d678f9dd0a1",
+  "apiKey": "AIzaSyCedeIHRic2pc6JIU_SagRt2O4d5IYcCFU",
+  "authDomain": "a1-smart-selection.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "a1-smart-selection.firebasestorage.app",
+  "messagingSenderId": "535612274420",
   "measurementId": "",
-  "oAuthClientId": "171532550649-7mmlors2gucit6grs0233gvovnkhji5c.apps.googleusercontent.com",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }

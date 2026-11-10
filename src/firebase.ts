@@ -33,9 +33,12 @@ export const app = initializeApp(appConfig);
 export const auth = getAuth(app);
 
 // Database ID: empty string or '(default)' means the default database (undefined)
-const databaseId = useEnvConfig
-  ? (!envDatabaseId || envDatabaseId === '(default)' ? undefined : envDatabaseId)
-  : (firebaseConfig.firestoreDatabaseId || undefined);
+const rawDatabaseId = useEnvConfig
+  ? envDatabaseId
+  : firebaseConfig.firestoreDatabaseId;
+
+const databaseId =
+  !rawDatabaseId || rawDatabaseId === '(default)' ? undefined : rawDatabaseId;
 
 // Initialize Firestore with persistent multi-tab IndexedDB cache
 // and auto-detect long polling (WebSocket first, fallback gracefully without server read spikes)
